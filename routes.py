@@ -34,6 +34,8 @@ def _require(perm_key, msg):
 def register_routes(app):
     """بتسجل كل الـ routes على الـ Flask app."""
     install_auth(app)
+    from inventory_entry import register_routes as register_inventory_routes
+    register_inventory_routes(app)
     from camera_api import register_camera_routes
     register_camera_routes(app)
     from shop_ops import register_routes as register_operations_routes
@@ -474,6 +476,16 @@ def register_routes(app):
         body    = request.get_json(force=True) or {}
         user_id = body.pop("__user_id", None)
         return _resp(_api.add_purchase(json.dumps(body), user_id))
+
+    @app.route("/api/add_captured_purchase", methods=["POST"])
+    def add_captured_purchase():
+        body = request.get_json(force=True) or {}
+        user_id = body.pop("__user_id", None)
+        return _resp(_api.add_captured_purchase(json.dumps(body), user_id))
+
+    @app.route("/api/purchase_invoice_image/<pid>")
+    def purchase_invoice_image(pid):
+        return _resp(_api.get_purchase_invoice_image(pid))
 
     @app.route("/api/receive_purchase/<pid>", methods=["POST"])
     def receive_purchase(pid):

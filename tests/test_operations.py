@@ -63,6 +63,26 @@ class OperationsTests(unittest.TestCase):
         self.assertTrue(json.loads(service.receive_purchase(pid,json.dumps(received)))['ok'])
         product=json.loads(service.get_product(mid))['data'];self.assertEqual(product['stock'],60);self.assertEqual(product['cost'],4)
 
+    def test_captured_invoice_is_saved_before_stock_is_added(self):
+        self.login();mid=self.product(stock=5)
+        created=self.client.post('/api/add_captured_purchase',json={
+            'supplier_id':'S001','supplier_invoice_num':'SUP-42','invoice_date':'2026-09-23',
+            'invoice_image_data':PNG,'notes':'فاتورة مصورة للاختبار',
+            'items':[{'product_id':mid,'qty_ordered':2,'unit_cost':100}],
+        }).json
+        self.assertTrue(created['ok'],created);pid=created['data']['id']
+        self.assertEqual(json.loads(api.ShopAPI().get_product(mid))['data']['stock'],5)
+        listed=next(p for p in self.client.get('/api/get_purchases').json['data'] if p['id']==pid)
+        self.assertEqual(listed['status'],'فاتورة مستلمة');self.assertTrue(listed['has_invoice_image'])
+        self.assertNotIn('invoice_image_data',listed)
+        self.assertEqual(self.client.get('/api/purchase_invoice_image/'+pid).json['data'],PNG)
+        line=listed['items'][0]
+        received=self.client.post('/api/receive_purchase/'+pid,json={
+            'items':[{'item_id':line['id'],'qty_received':2,'unit_cost':100}],
+        }).json
+        self.assertTrue(received['ok'],received);self.assertEqual(received['data']['status'],'مستلم')
+        self.assertEqual(json.loads(api.ShopAPI().get_product(mid))['data']['stock'],45)
+
     def test_credit_sale_requires_name_and_records_first_payment(self):
         mid=self.product();service=api.ShopAPI()
         missing=json.loads(service.add_sale(json.dumps(self.sale(mid,payment_method='آجل',credit_paid_amount=2))))

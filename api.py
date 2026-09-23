@@ -560,6 +560,10 @@ def init_db():
 
     # أعمدة أُضيفت بعد الإصدار الأول لجداول لا يعاد إنشاؤها
     _add_col("suppliers", "is_active",    "INTEGER DEFAULT 1")
+    _add_col("purchases", "invoice_image_data", "TEXT")
+    _add_col("purchases", "supplier_invoice_num", "TEXT")
+    _add_col("purchases", "invoice_date", "TEXT")
+    _add_col("purchases", "source", "TEXT DEFAULT 'manual'")
     _add_col("cash_sessions", "card_total",     "REAL DEFAULT 0")
     _add_col("cash_sessions", "transfer_total", "REAL DEFAULT 0")
     _add_col("cash_sessions", "credit_total",   "REAL DEFAULT 0")
@@ -571,6 +575,8 @@ def init_db():
     con.execute("UPDATE products SET conversion_factor=1 WHERE conversion_factor IS NULL OR conversion_factor<1")
     from shop_ops import init_schema as init_operations_schema
     init_operations_schema(con)
+    from inventory_entry import init_schema as init_inventory_schema
+    init_inventory_schema(con)
     # خدمة أجرة اليد العاملة تُستخدم في فواتير الصيانة
     con.execute(
         "INSERT OR IGNORE INTO products(id,name,category,price,cost,stock,min_stock,unit,purchase_unit,sale_unit,"
@@ -967,8 +973,8 @@ class ShopAPI:
             conflict = _barcode_conflict(con, d)
             if conflict:
                 return _err(conflict)
-            stock = 0 if (track or service) else int(d.get("stock") or 0)
-            if stock < 0:
+            stock = 0 if (track or service) else float(d.get("stock") or 0)
+            if not math.isfinite(stock) or stock < 0 or (not float(stock).is_integer() and d.get('unit') not in ('متر','كيلو','لتر')):
                 return _err("الرصيد لا يمكن أن يكون سالبًا")
             factor = 1 if (track or service) else max(1, int(d.get("conversion_factor") or 1))
             unit = d.get("unit") or ("خدمة" if service else "قطعة")
@@ -1029,10 +1035,10 @@ class ShopAPI:
                 return _err("لا يمكن إيقاف التتبع وفي المخزون أجهزة مسجلة بأرقامها")
             if service and old["stock"] > 0 and not old["is_service"]:
                 return _err("لا يمكن تحويل صنف عليه رصيد إلى خدمة")
-            new_stock = int(val("stock") or 0)
+            new_stock = float(val("stock") or 0)
             if track or service:
                 new_stock = old["stock"]           # رصيد الأجهزة = عدد الوحدات المتاحة، ولا يُعدَّل يدويًا
-            if new_stock < 0:
+            if not math.isfinite(new_stock) or new_stock < 0 or (not float(new_stock).is_integer() and val('unit') not in ('متر','كيلو','لتر')):
                 return _err("الرصيد لا يمكن أن يكون سالبًا")
             sale_unit = val("sale_unit") or val("unit") or "قطعة"
             factor = 1 if (track or service) else max(1, int(val("conversion_factor") or 1))
@@ -1464,7 +1470,7 @@ class ShopAPI:
     def get_categories(self):
         con  = _conn()
         rows = [r[0] for r in con.execute(
-            "SELECT DISTINCT category FROM products WHERE is_active=1 ORDER BY category"
+            "SELECT name FROM inventory_categories UNION SELECT DISTINCT category FROM products WHERE is_active=1 AND is_service=0 AND category<>'خدمات' ORDER BY 1"
         ).fetchall()]
         con.close(); return _ok(rows)
 
@@ -1851,9 +1857,9 @@ class ShopAPI:
             products_by_id = {}
             for item in items:
                 quantity = float(item.get("qty", 0))
-                if not quantity.is_integer() or quantity < 1 or item.get("productId") in seen_products:
+                if not math.isfinite(quantity) or quantity <= 0 or item.get("productId") in seen_products:
                     raise ValueError("كميات البيع يجب أن تكون أعدادًا صحيحة موجبة بدون أصناف مكررة")
-                item["qty"] = int(quantity)
+                item["qty"] = quantity
                 price_value = float(item.get("price", 0))
                 if not math.isfinite(price_value) or price_value < 0:
                     raise ValueError("سعر الصنف غير صحيح")
@@ -1863,6 +1869,8 @@ class ShopAPI:
                 if not product_row:
                     raise ValueError(f"الصنف '{item.get('name', item['productId'])}' غير موجود في قاعدة البيانات")
                 products_by_id[item["productId"]] = product_row
+                if not quantity.is_integer() and (product_row['track_serial'] or (product_row['sale_unit'] or product_row['unit']) not in ('متر','كيلو','لتر')):
+                    raise ValueError('الكميات الكسرية متاحة للمتر والكيلو واللتر فقط')
                 if product_row["is_service"]:
                     continue
                 if product_row["stock"] < item["qty"]:
@@ -1876,7 +1884,7 @@ class ShopAPI:
                             f"'{product_row['name']}' يُباع برقم IMEI/Serial لكل جهاز: حدّد {item['qty']} رقم (المحدد {len(item['serials'])})")
 
             # الضريبة مصدرها الإعدادات فقط، وليس القيمة القادمة من المتصفح.
-            subtotal_value = round(sum(float(i["price"]) * int(i["qty"]) for i in items), 2)
+            subtotal_value = round(sum(float(i["price"]) * float(i["qty"]) for i in items), 2)
             discount_value = max(0.0, min(float(d.get("discount", 0) or 0), subtotal_value))
             tax_row = con.execute("SELECT value FROM settings WHERE key='tax_rate'").fetchone()
             try: configured_tax_pct = max(0.0, float(tax_row[0])) if tax_row else 0.0
@@ -3165,7 +3173,10 @@ class ShopAPI:
     def get_purchases(self):
         con = _conn()
         rows = _rows(con.execute(
-            "SELECT p.*, s.name AS supplier_name_ref "
+            "SELECT p.id,p.po_num,p.supplier_id,p.supplier_name,p.status,p.total_cost,p.notes,p.created_by,"
+            "p.created_at,p.received_at,p.supplier_invoice_num,p.invoice_date,p.source,"
+            "CASE WHEN p.invoice_image_data IS NOT NULL AND p.invoice_image_data<>'' THEN 1 ELSE 0 END AS has_invoice_image,"
+            "s.name AS supplier_name_ref "
             "FROM purchases p LEFT JOIN suppliers s ON s.id=p.supplier_id "
             "ORDER BY p.created_at DESC"))
         for r in rows:
@@ -3175,13 +3186,73 @@ class ShopAPI:
 
     def get_purchase(self, pid: str):
         con = _conn()
-        row = con.execute("SELECT * FROM purchases WHERE id=?", (pid,)).fetchone()
+        row = con.execute(
+            "SELECT id,po_num,supplier_id,supplier_name,status,total_cost,notes,created_by,created_at,received_at,"
+            "supplier_invoice_num,invoice_date,source,CASE WHEN invoice_image_data IS NOT NULL AND invoice_image_data<>'' "
+            "THEN 1 ELSE 0 END AS has_invoice_image FROM purchases WHERE id=?", (pid,)).fetchone()
         if not row: con.close(); return _ok(None)
         p = dict(row)
         p["items"] = _rows(con.execute(
             "SELECT pi.*, COALESCE(m.track_serial,0) AS track_serial FROM purchase_items pi "
             "LEFT JOIN products m ON m.id=pi.product_id WHERE pi.purchase_id=?", (pid,)))
         con.close(); return _ok(p)
+
+    def get_purchase_invoice_image(self, pid: str):
+        con = _conn()
+        row = con.execute("SELECT invoice_image_data FROM purchases WHERE id=?", (pid,)).fetchone()
+        con.close()
+        if not row: return _err("الفاتورة غير موجودة")
+        return _ok(row["invoice_image_data"])
+
+    def add_captured_purchase(self, data: str, user_id: str = None):
+        """حفظ فاتورة مورد مصوّرة للمراجعة قبل إدخال بنودها إلى المخزون."""
+        con = None
+        try:
+            d = json.loads(data)
+            from camera_api import validate_image
+            validate_image(d.get("invoice_image_data"))
+            if not d.get("invoice_image_data"): raise ValueError("اختر صورة الفاتورة")
+            invoice_num = str(d.get("supplier_invoice_num") or "").strip()
+            invoice_date = str(d.get("invoice_date") or date.today().isoformat()).strip()
+            if len(invoice_num) > 100: raise ValueError("رقم فاتورة المورد طويل جداً")
+            try: date.fromisoformat(invoice_date)
+            except ValueError: raise ValueError("تاريخ الفاتورة غير صالح")
+            items = d.get("items") or []
+            if not items: raise ValueError("أضف صنفاً واحداً على الأقل للفاتورة")
+
+            con = _conn(); con.execute("BEGIN IMMEDIATE")
+            supplier = con.execute("SELECT name FROM suppliers WHERE id=? AND is_active=1", (d.get("supplier_id"),)).fetchone()
+            if not supplier: raise ValueError("اختر مورداً صحيحاً")
+            prepared = []
+            for item in items:
+                product = con.execute("SELECT * FROM products WHERE id=? AND is_active=1", (item.get("product_id"),)).fetchone()
+                if not product: raise ValueError("أحد أصناف الفاتورة غير موجود")
+                qty = float(item.get("qty_ordered", 0)); cost = float(item.get("unit_cost", 0))
+                if not qty.is_integer() or qty <= 0: raise ValueError("كمية الفاتورة يجب أن تكون عدداً صحيحاً موجباً")
+                if not 0 <= cost < float("inf"): raise ValueError("تكلفة الصنف غير صحيحة")
+                prepared.append(dict(product_id=product["id"], product_name=product["name"], qty_ordered=int(qty),
+                    unit_cost=cost, purchase_unit=product["purchase_unit"] or product["unit"],
+                    sale_unit=product["sale_unit"] or product["unit"], conversion_factor=product["conversion_factor"] or 1))
+
+            nid = _new_id("PO"); year = datetime.now().year
+            seq = con.execute("SELECT COALESCE(MAX(CAST(SUBSTR(po_num,8) AS INTEGER)),0) FROM purchases").fetchone()[0] + 1
+            po_num = f"PO-{year}-{seq:03d}"; now = datetime.now().isoformat()
+            total = sum(i["qty_ordered"] * i["unit_cost"] for i in prepared)
+            con.execute("INSERT INTO purchases(id,po_num,supplier_id,supplier_name,status,total_cost,notes,created_by,created_at,"
+                "supplier_invoice_num,invoice_date,invoice_image_data,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (nid,po_num,d.get("supplier_id"),supplier["name"],"فاتورة مستلمة",total,str(d.get("notes") or "").strip(),
+                 user_id,now,invoice_num or None,invoice_date,d["invoice_image_data"],"captured_invoice"))
+            for item in prepared:
+                con.execute("INSERT INTO purchase_items(purchase_id,product_id,product_name,qty_ordered,qty_received,unit_cost,total_cost,"
+                    "purchase_unit,sale_unit,conversion_factor) VALUES(?,?,?,?,0,?,?,?,?,?)",
+                    (nid,item["product_id"],item["product_name"],item["qty_ordered"],item["unit_cost"],
+                     item["qty_ordered"]*item["unit_cost"],item["purchase_unit"],item["sale_unit"],item["conversion_factor"]))
+            con.execute("UPDATE suppliers SET total_orders=total_orders+1,last_order=? WHERE id=?", (invoice_date,d.get("supplier_id")))
+            _audit(con,user_id,"ADD_CAPTURED_INVOICE","purchase",nid,f"{po_num} — {invoice_num or 'بدون رقم'}")
+            con.commit(); con.close(); return _ok({"id":nid,"po_num":po_num})
+        except Exception as e:
+            if con: con.rollback(); con.close()
+            return _err(str(e))
 
     def add_purchase(self, data: str, user_id: str = None):
         """إنشاء أمر شراء جديد (status=مفتوح)"""
@@ -3298,7 +3369,7 @@ class ShopAPI:
                         con.execute("UPDATE products SET stock=stock+? WHERE id=?", (stock_qty, item_row["product_id"]))
                     # سعر أمر الشراء لوحدة الشراء؛ نخزن تكلفة وحدة البيع (متوسط مرجّح للأصناف العادية).
                     if cost_value is not None:
-                        old_stock = max(0, int(product_units["stock"] or 0))
+                        old_stock = max(0, float(product_units["stock"] or 0))
                         if product_units["track_serial"] or old_stock == 0:
                             new_cost = per_unit_cost
                         else:

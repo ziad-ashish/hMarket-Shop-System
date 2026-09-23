@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 > nul
+cd /d "%~dp0"
 title تك ماركت - إدارة المحل
 
 echo.
@@ -9,7 +10,8 @@ echo  ╚═══════════════════════�
 echo.
 
 set "PYTHON_CMD=python"
-python --version > nul 2>&1
+if exist ".python\python.exe" set "PYTHON_CMD=.python\python.exe"
+%PYTHON_CMD% --version > nul 2>&1
 if errorlevel 1 set "PYTHON_CMD=py"
 %PYTHON_CMD% --version > nul 2>&1
 if errorlevel 1 (

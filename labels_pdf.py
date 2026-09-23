@@ -41,7 +41,7 @@ def _draw_one_label(c: canvas.Canvas, x: float, y: float, w: float, h: float, pr
     c.setFillColorRGB(0.05, 0.35, 0.32)
     c.drawCentredString(x + w / 2, y + h * 0.42, price_text)
 
-    code = product.get("barcode") or product["id"]
+    code = product.get("shop_barcode") or product.get("barcode") or product["id"]
     bar_h = h * 0.22
     bc = code128.Code128(str(code), barHeight=bar_h, barWidth=0.28 * MM)
     if bc.width > w - 2 * pad:
@@ -55,7 +55,7 @@ def generate_labels_pdf(product_ids: list, copies_per_item: int, output_path: st
     with closing(api._conn()) as con:
         placeholders = ",".join("?" * len(product_ids))
         rows = con.execute(
-            f"SELECT id, name, price, barcode FROM products WHERE id IN ({placeholders})", product_ids
+            f"SELECT id, name, price, barcode, shop_barcode FROM products WHERE id IN ({placeholders})", product_ids
         ).fetchall()
         products = [dict(r) for r in rows]
 

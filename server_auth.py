@@ -41,6 +41,8 @@ ENDPOINT_PERMISSIONS = {
     "scan_resolve": ("products", "products_view", "sales"),
     "product_image": ("products", "products_view", "sales"),
     "add_product": ("products",),
+    "inventory_invoice_line": ("products",),
+    "manage_inventory_category": ("products",),
     "update_product": ("products",),
     "delete_product": ("products",),
     "import_products": ("products",),
@@ -77,6 +79,8 @@ ENDPOINT_PERMISSIONS = {
     "get_purchases": ("suppliers",),
     "get_purchase": ("suppliers",),
     "add_purchase": ("suppliers",),
+    "add_captured_purchase": ("suppliers", "products"),
+    "purchase_invoice_image": ("suppliers", "products"),
     "receive_purchase": ("suppliers",),
     "cancel_purchase": ("suppliers",),
 

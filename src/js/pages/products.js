@@ -13,7 +13,7 @@ const ProductsPage = (() => {
   let _savedImage;            // undefined = بدون تغيير، null = إزالة، نص = صورة جديدة (base64)
 
   const DEFAULT_CATEGORIES = ['موبايلات', 'إكسسوارات موبايل', 'أدوات كهربائية', 'مستلزمات كهرباء', 'قطع غيار', 'خدمات'];
-  const UNITS = ['قطعة', 'جهاز', 'طقم', 'متر', 'علبة', 'كرتونة', 'لفة', 'خدمة'];
+  const UNITS = ['قطعة', 'جهاز', 'طقم', 'متر', 'كيلو', 'لتر', 'علبة', 'كرتونة', 'بكرة', 'لفة', 'خدمة'];
 
   /* ── PAGE SHELL ─────────────────────────────────────── */
   function render() {
@@ -28,10 +28,7 @@ const ProductsPage = (() => {
       <p class="pg-subtitle">موبايلات بأرقام IMEI • إكسسوارات • أدوات كهربائية • قطع غيار • خدمات</p>
     </div>
     <div class="pg-actions">
-      <button type="button" class="btn btn-ghost" id="productCountBtn"><i class="fas fa-camera"></i> الجرد بالكاميرا</button>
-      <input type="file" id="productImportFile" accept=".csv,text/csv" hidden>
-      <button class="btn btn-ghost btn-sm" id="productTemplateBtn"><i class="fas fa-file-arrow-down"></i> قالب CSV</button>
-      <button class="btn btn-ghost btn-sm" id="productImportBtn"><i class="fas fa-file-import"></i> استيراد CSV</button>
+      <button type="button" class="btn btn-ghost" id="addInventoryInvoice"><i class="fas fa-file-invoice"></i> إضافة فاتورة</button>
       <button class="btn btn-ghost btn-sm" id="productExportBtn"><i class="fas fa-download"></i> تصدير</button>
       <button class="btn btn-amber" id="productAddBtn"><i class="fas fa-plus"></i> إضافة صنف</button>
     </div>
@@ -55,6 +52,7 @@ const ProductsPage = (() => {
       <input type="search" id="productSearch" placeholder="بحث بالاسم أو الماركة أو الموديل أو الباركود..." />
     </div>
     <div class="cat-filters" id="catFilters"></div>
+    <button class="btn btn-ghost" id="manageCategories">إدارة التصنيفات</button>
   </div>
 
   <div class="card">
@@ -80,18 +78,22 @@ const ProductsPage = (() => {
   }
 
   async function afterRender() {
-    document.getElementById('productCountBtn')?.addEventListener('click', () => CameraWorkflows.count());
+    document.getElementById('addInventoryInvoice').onclick = () => InventoryEntry.open().catch(e => Toast.err('تعذر فتح الفاتورة',e.message));
+    document.getElementById('manageCategories').onclick = () => InventoryEntry.categories(_loadData);
+    document.getElementById('capturedInvoiceBtn')?.addEventListener('click', () => document.getElementById('capturedInvoiceFile')?.click());
+    document.getElementById('capturedInvoiceFile')?.addEventListener('change', async event => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const imageData = await _prepareInvoiceImage(file);
+        await openCapturedInvoiceModal(imageData, file.name);
+      } catch (error) { Toast.err('تعذر فتح الفاتورة', error.message); }
+      finally { input.value = ''; }
+    });
     document.getElementById('productAddBtn')?.addEventListener('click', () => openAddModal());
     document.getElementById('productExportBtn')?.addEventListener('click', exportData);
     document.getElementById('productImportBtn')?.addEventListener('click', () => document.getElementById('productImportFile')?.click());
-    document.getElementById('productTemplateBtn')?.addEventListener('click', () => {
-      const csv = 'name,brand,model,category,barcode,price,cost,stock,unit,location,min_stock,warranty_months,track_serial\n'
-        + 'شاحن سريع 25 وات,Samsung,EP-TA800,إكسسوارات موبايل,,450,300,40,قطعة,B-1,10,6,0\n'
-        + 'سامسونج A15,Samsung,Galaxy A15,موبايلات,,9800,8900,0,جهاز,A-2,3,24,1\n';
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
-      a.download = 'products_template.csv'; a.click(); URL.revokeObjectURL(a.href);
-    });
     document.getElementById('productImportFile')?.addEventListener('change', async e => {
       const file = e.target.files?.[0]; if (!file) return;
       try {
@@ -134,7 +136,7 @@ const ProductsPage = (() => {
       const [products, cats, low, aging] = await Promise.all([
         DB.getProducts(), DB.getCategories(), DB.getLowStock(), DB.getStockAgingReport().catch(() => null),
       ]);
-      _allProducts = products || [];
+      _allProducts = (products || []).filter(p => !p.isService);
       const aged = aging?.buckets?.over90 || [];
       _agedIds = new Set(aged.map(u => u.product_id));
 
@@ -257,7 +259,7 @@ const ProductsPage = (() => {
 
   async function _formHTML(p) {
     const [categories, suppliers] = await Promise.all([DB.getCategories(), DB.getSuppliers().catch(() => [])]);
-    const cats = [...new Set([...(categories || []), ...DEFAULT_CATEGORIES, ...(p?.category ? [p.category] : [])])];
+    const cats = [...new Set([...(categories || []), ...(p?.category ? [p.category] : [])])];
     const catOptions = cats.map(c => `<option value="${_esc(c)}" ${p?.category === c ? 'selected' : ''}>${_esc(c)}</option>`).join('');
     const suppOptions = (suppliers || []).map(s => `<option value="${_esc(s.id)}" ${p?.supplierId === s.id ? 'selected' : ''}>${_esc(s.name)}</option>`).join('');
     const unitOptions = sel => [...new Set([...UNITS, sel].filter(Boolean))].map(u => `<option ${u === sel ? 'selected' : ''}>${_esc(u)}</option>`).join('');
@@ -334,7 +336,7 @@ const ProductsPage = (() => {
       <section class="mf-section">
         <div class="mf-section-title"><span>03</span><div><strong>التسعير والمخزون والضمان</strong><small>الأسعار والكميات ومدة الضمان</small></div></div>
         <div class="mf-grid cols-3">
-          <label class="mf-field"><span>سعر الشراء <b>*</b></span>
+          <label class="mf-field"><span>تكلفة وحدة البيع / المتر <b>*</b></span>
             <div class="mf-money"><input id="fProductCostPrice" class="form-control" type="number" min="0" step="0.01" value="${v(p?.cost)}"><em>ج.م</em></div></label>
           <label class="mf-field"><span>سعر البيع <b>*</b></span>
             <div class="mf-money"><input id="fProductSellPrice" class="form-control" type="number" min="0" step="0.01" value="${v(p?.price)}"><em>ج.م</em></div></label>
@@ -344,14 +346,16 @@ const ProductsPage = (() => {
             <input id="fProductWholesaleMinQty" class="form-control" type="number" min="1" value="${v(p?.wholesaleMinQty, 1)}"></label>
           <label class="mf-field"><span>مدة الضمان (بالشهور)</span>
             <input id="fProductWarranty" class="form-control" type="number" min="0" max="120" value="${v(p?.warrantyMonths, 0)}"></label>
+          <label class="mf-field" data-stockonly data-noserial><span><input type="checkbox" id="fProductDivisible" ${p?.conversionFactor > 1 ? 'checked' : ''}> شراء عبوة وبيع بالتجزئة</span><small>مثال: بكرة 100 متر؛ الرصيد والأسعار أدناه للمتر.</small></label>
           <label class="mf-field" data-stockonly><span>وحدة البيع <b>*</b></span>
             <select id="fProductUnitType" class="form-control">${unitOptions(p?.saleUnit || p?.unit || 'قطعة')}</select></label>
           <label class="mf-field" data-stockonly data-noserial><span>وحدة الشراء</span>
             <select id="fProductPurchaseUnit" class="form-control">${unitOptions(p?.purchaseUnit || p?.unit || 'قطعة')}</select></label>
           <label class="mf-field" data-stockonly data-noserial><span>عدد وحدات البيع في وحدة الشراء</span>
             <input id="fProductConversionFactor" class="form-control" type="number" min="1" value="${v(p?.conversionFactor, 1)}"></label>
-          <label class="mf-field" data-stockonly data-noserial><span>الكمية الحالية <b>*</b></span>
-            <input id="fProductQuantityPerBox" class="form-control" type="number" min="0" value="${v(p?.stock, 0)}"></label>
+          <label class="mf-field" data-stockonly data-noserial><span>الرصيد بوحدة البيع (مثال: أمتار) <b>*</b></span>
+            <input id="fProductQuantityPerBox" class="form-control" type="number" min="0" step="any" value="${v(p?.stock, 0)}"></label>
+          <label class="mf-field" data-stockonly><span>ملصقات تُطبع بعد الحفظ (0 بدون طباعة)</span><input id="fProductLabelCopies" class="form-control" type="number" min="0" max="200" value="0"></label>
           <label class="mf-field" data-stockonly><span>حد إعادة الطلب</span>
             <input id="fProductMinStock" class="form-control" type="number" min="0" value="${v(p?.minStock, 5)}"></label>
           <label class="mf-field"><span>موقع التخزين</span>
@@ -379,6 +383,10 @@ const ProductsPage = (() => {
       if (kind === 'service' && $('fProductCategory') && !$('fProductCategory').value) $('fProductCategory').value = 'خدمات';
     };
     $('fProductKind')?.addEventListener('change', applyKind);
+    $('fProductDivisible')?.addEventListener('change', () => {
+      if ($('fProductDivisible').checked) { $('fProductUnitType').value='متر'; $('fProductPurchaseUnit').value='بكرة'; $('fProductConversionFactor').value=100; }
+      else { $('fProductPurchaseUnit').value=$('fProductUnitType').value; $('fProductConversionFactor').value=1; }
+    });
     applyKind();
 
     const updateMargin = () => {
@@ -476,7 +484,8 @@ const ProductsPage = (() => {
       description: g('fProductNotes')?.value.trim(),
       trackSerial: isDevice, isService,
     };
-    if (!isDevice && !isService) data.stock = parseInt(g('fProductQuantityPerBox')?.value);
+    if (!data.shopBarcode && !isService) data.shopBarcode = _generateShopBarcode();
+    if (!isDevice && !isService) data.stock = Number(g('fProductQuantityPerBox')?.value);
     if (_savedImage !== undefined) data.imageData = _savedImage;
     return data;
   }
@@ -485,7 +494,7 @@ const ProductsPage = (() => {
     if (!d.name || !d.category || !Number.isFinite(d.cost) || !Number.isFinite(d.price) || d.cost < 0 || d.price < 0) {
       Toast.err('بيانات غير مكتملة', 'راجع الاسم والتصنيف وسعري الشراء والبيع'); return false;
     }
-    if (d.stock !== undefined && (!Number.isInteger(d.stock) || d.stock < 0)) {
+    if (d.stock !== undefined && (!Number.isFinite(d.stock) || d.stock < 0 || (!['متر','كيلو','لتر'].includes(d.unit) && !Number.isInteger(d.stock)))) {
       Toast.err('كمية غير صحيحة', 'الكمية الحالية يجب أن تكون رقمًا صحيحًا غير سالب'); return false;
     }
     return true;
@@ -510,7 +519,9 @@ const ProductsPage = (() => {
       if (!_validate(data)) return;
       const btn = e.currentTarget; btn.disabled = true;
       try {
-        await DB.addProduct(data);
+        const copies = Math.min(200, Math.max(0, Math.floor(Number(document.getElementById('fProductLabelCopies')?.value) || 0)));
+        const id = await DB.addProduct(data);
+        if (copies && !data.isService) window.open(`/api/print_labels?product_ids=${encodeURIComponent(id)}&copies=${copies}`, '_blank');
         Toast.ok('تم الحفظ', `تم حفظ «${data.name}»`);
         Modal.close();
         await _loadData();
@@ -717,5 +728,105 @@ const ProductsPage = (() => {
       _allProducts.map(m => [m.barcode || m.shopBarcode, m.name, m.brand, m.model, m.category, m.cost, m.price, m.isService ? '' : m.stock, m.warrantyMonths, m.location]));
   }
 
-  return { render, afterRender, openAddModal };
+  function _prepareInvoiceImage(file) {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      return Promise.reject(new Error('اختر صورة JPG أو PNG أو WebP'));
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('تعذرت قراءة الصورة'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('ملف الصورة غير صالح'));
+        img.onload = () => {
+          const maxSide = 1600;
+          const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          const context = canvas.getContext('2d');
+          context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(img, 0, 0, canvas.width, canvas.height);
+          let quality = .86, data = canvas.toDataURL('image/jpeg', quality);
+          while (data.length > 1350000 && quality > .45) { quality -= .1; data = canvas.toDataURL('image/jpeg', quality); }
+          if (data.length > 1400000) return reject(new Error('الصورة كبيرة جداً حتى بعد ضغطها'));
+          resolve(data);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function openCapturedInvoiceModal(imageData, fileName = '') {
+    const [suppliers, products] = await Promise.all([DB.getSuppliers(), DB.getProducts()]);
+    let rowSeq = 0;
+    const productOptions = (products || []).filter(p => !p.isService).map(p =>
+      `<option value="${_esc(p.id)}" data-cost="${Number(p.cost || 0) * Number(p.conversionFactor || 1)}">${_esc(p.name)} — ${_esc(p.purchaseUnit || p.unit)}</option>`
+    ).join('');
+    const today = new Date().toISOString().slice(0, 10);
+    const body = `
+      <div style="display:grid;grid-template-columns:minmax(260px,.8fr) minmax(420px,1.2fr);gap:1rem;align-items:start" class="captured-invoice-layout">
+        <div style="position:sticky;top:0">
+          <div style="border:1px solid var(--border);border-radius:10px;background:var(--surface-2);padding:.6rem;text-align:center">
+            <img src="${imageData}" alt="صورة فاتورة المورد" style="display:block;width:100%;max-height:520px;object-fit:contain;border-radius:7px;background:#fff">
+          </div>
+          <small style="display:block;margin-top:.4rem;color:var(--tx-3)">${_esc(fileName)} — الصورة محفوظة داخل الفاتورة</small>
+        </div>
+        <div>
+          <div class="mf-grid cols-2">
+            <label class="mf-field"><span>المورد <b>*</b></span><select id="capInvoiceSupplier" class="form-control"><option value="">اختر المورد</option>${(suppliers || []).map(s => `<option value="${_esc(s.id)}">${_esc(s.name)}</option>`).join('')}</select></label>
+            <label class="mf-field"><span>رقم فاتورة المورد</span><input id="capInvoiceNumber" class="form-control" maxlength="100" placeholder="مثال: INV-1258"></label>
+            <label class="mf-field"><span>تاريخ الفاتورة <b>*</b></span><input id="capInvoiceDate" class="form-control" type="date" value="${today}"></label>
+            <label class="mf-field"><span>ملاحظات</span><input id="capInvoiceNotes" class="form-control" placeholder="أي ملاحظات على الاستلام"></label>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:.9rem 0 .5rem"><strong>بنود الفاتورة القابلة للتعديل</strong><button type="button" class="btn btn-ghost btn-sm" id="capInvoiceAddItem"><i class="fas fa-plus"></i> إضافة بند</button></div>
+          <div id="capInvoiceItems"></div>
+          <div style="text-align:left;margin-top:.7rem">الإجمالي: <strong id="capInvoiceTotal" style="color:var(--teal-600)">0.00 ج.م</strong></div>
+        </div>
+      </div>`;
+    Modal.open({
+      title: '<i class="fas fa-file-image"></i> مراجعة فاتورة مصوّرة', size: 'lg', body,
+      foot: `<div class="mf-foot-note"><i class="fas fa-circle-info"></i> الحفظ لا يغيّر المخزون؛ الاعتماد يتم من صفحة المشتريات</div><div class="mf-foot-actions"><button class="btn btn-ghost" onclick="Modal.close()">إلغاء</button><button class="btn btn-primary" id="saveCapturedInvoice"><i class="fas fa-check"></i> حفظ ضمن الفواتير المستلمة</button></div>`,
+    });
+
+    const calculate = () => {
+      let total = 0;
+      document.querySelectorAll('.captured-invoice-item').forEach(row => {
+        total += (Number(row.querySelector('[data-qty]')?.value) || 0) * (Number(row.querySelector('[data-cost]')?.value) || 0);
+      });
+      const el = document.getElementById('capInvoiceTotal'); if (el) el.textContent = Fmt.money(total);
+    };
+    const addRow = () => {
+      const key = ++rowSeq;
+      const row = document.createElement('div'); row.className = 'captured-invoice-item';
+      row.style.cssText = 'display:grid;grid-template-columns:minmax(180px,1fr) 82px 105px 34px;gap:.45rem;align-items:center;margin-bottom:.5rem';
+      row.innerHTML = `<select class="form-control" data-product><option value="">اختر الصنف</option>${productOptions}</select><input class="form-control" data-qty type="number" min="1" step="1" value="1" title="كمية وحدة الشراء"><input class="form-control" data-cost type="number" min="0" step="0.01" value="0" title="تكلفة وحدة الشراء"><button type="button" class="btn btn-ghost btn-icon sm" title="حذف البند" style="color:var(--err)"><i class="fas fa-trash"></i></button>`;
+      row.querySelector('[data-product]').addEventListener('change', event => { row.querySelector('[data-cost]').value = event.target.selectedOptions[0]?.dataset.cost || 0; calculate(); });
+      row.querySelectorAll('input').forEach(input => input.addEventListener('input', calculate));
+      row.querySelector('button').addEventListener('click', () => { row.remove(); calculate(); });
+      document.getElementById('capInvoiceItems').appendChild(row); calculate();
+      return key;
+    };
+    document.getElementById('capInvoiceAddItem').addEventListener('click', addRow); addRow();
+    document.getElementById('saveCapturedInvoice').addEventListener('click', async event => {
+      const button = event.currentTarget; if (button.disabled) return;
+      const supplierId = document.getElementById('capInvoiceSupplier').value;
+      const items = [...document.querySelectorAll('.captured-invoice-item')].map(row => ({
+        product_id: row.querySelector('[data-product]').value,
+        qty_ordered: Number(row.querySelector('[data-qty]').value),
+        unit_cost: Number(row.querySelector('[data-cost]').value),
+      })).filter(item => item.product_id && item.qty_ordered > 0);
+      if (!supplierId) return Toast.warn('بيانات ناقصة', 'اختر المورد');
+      if (!items.length) return Toast.warn('بيانات ناقصة', 'أضف صنفاً واحداً على الأقل');
+      button.disabled = true;
+      try {
+        const result = await DB.addCapturedPurchase({ supplier_id: supplierId, supplier_invoice_num: document.getElementById('capInvoiceNumber').value.trim(), invoice_date: document.getElementById('capInvoiceDate').value, notes: document.getElementById('capInvoiceNotes').value.trim(), invoice_image_data: imageData, items });
+        Toast.ok('تم حفظ الفاتورة', `${result.po_num} — يمكنك الآن إضافة منتجاتها للمخزون من صفحة المشتريات`);
+        Modal.close(); App.navigate('purchases');
+      } catch (error) { Toast.err('فشل حفظ الفاتورة', error.message); button.disabled = false; }
+    });
+  }
+
+  return { render, afterRender, openAddModal, openEditModal, prepareInvoiceImage: _prepareInvoiceImage };
 })();

@@ -398,6 +398,8 @@ const DB = {
   async getPurchases()          { return _IS_FLASK ? _api('get_purchases') : []; },
   async getPurchase(id)         { return _IS_FLASK ? _api(`get_purchase/${id}`) : null; },
   async addPurchase(data)       { return _IS_FLASK ? _api('add_purchase', {body: this._withUser({...data})}) : {}; },
+  async addCapturedPurchase(data) { return _IS_FLASK ? _api('add_captured_purchase', {body: this._withUser({...data})}) : {}; },
+  async getPurchaseInvoiceImage(id) { return _IS_FLASK ? _api(`purchase_invoice_image/${id}`) : null; },
   async receivePurchase(id, d)  { return _IS_FLASK ? _api(`receive_purchase/${id}`, {body: this._withUser({...d})}) : {}; },
   async cancelPurchase(id)      { return _IS_FLASK ? _api(`cancel_purchase/${id}`, {body: this._withUser({})}) : {}; },
 

@@ -178,7 +178,7 @@ def register_routes(app):
                 seen=set()
                 for item in items:
                     qty=float(item.get('qty',0));mid=item.get('productId')
-                    if mid in seen or not qty.is_integer() or not 1<=qty<=1000000:
+                    if mid in seen or not math.isfinite(qty) or not 0<qty<=1000000:
                         raise ValueError('كميات المسودة غير صحيحة')
                     seen.add(mid)
                 for item in items:

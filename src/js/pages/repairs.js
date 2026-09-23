@@ -30,6 +30,7 @@ const RepairsPage = (() => {
       <p class="pg-subtitle">استلام الأجهزة وتتبع الإصلاح وتسليمها بفاتورة</p>
     </div>
     <div class="pg-actions">
+      <button class="btn btn-ghost" id="repairServices">خدمات الصيانة</button>
       <button class="btn btn-amber" id="repAddBtn"><i class="fas fa-plus"></i> استلام جهاز للصيانة</button>
     </div>
   </div>
@@ -55,6 +56,7 @@ const RepairsPage = (() => {
   }
 
   async function afterRender() {
+    document.getElementById('repairServices').onclick = () => InventoryEntry.services();
     document.getElementById('repAddBtn')?.addEventListener('click', openAdd);
     document.getElementById('repSearch')?.addEventListener('input', debounce(e => { _search = e.target.value.trim(); _load(); }, 300));
     document.getElementById('repTabs')?.addEventListener('click', e => {

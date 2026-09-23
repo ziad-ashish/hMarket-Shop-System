@@ -587,7 +587,8 @@ const SalesPage = (() => {
   function addToCart(productId, quantity=1, serials=null) {
     if(_checkoutBusy||_restoring)return false;
     const product = _allProducts.find(m=>m.id===productId);
-    if (!product || !Number.isInteger(quantity) || quantity<1) return false;
+    if (!product || !Number.isFinite(quantity) || quantity<=0) return false;
+    if (['متر','كيلو','لتر'].includes(product.saleUnit || product.unit) && _stockOf(product)>0) quantity=Math.min(quantity,_stockOf(product));
     if (product.trackSerial) {
       if (!serials) { _pickAndAdd(product); return true; }
       const existing = _cart.find(i=>i.productId===productId);
@@ -616,7 +617,7 @@ const SalesPage = (() => {
     const item = _cart.find(i=>i.productId===productId);
     if (!item || item.trackSerial) return;
     const product = _allProducts.find(m=>m.id===productId);
-    item.qty  = Math.max(1, Math.min(item.qty+delta, _stockOf(product)));
+    item.qty  = Math.max(['متر','كيلو','لتر'].includes(product.saleUnit || product.unit) ? .001 : 1, Math.min(item.qty+delta, _stockOf(product)));
     item.price= _priceFor(product,item.qty);
     item.total= item.qty * item.price;
     updateCartUI();
@@ -647,7 +648,7 @@ const SalesPage = (() => {
             ? `<div class="qty-ctrl"><button class="qty-btn" data-edit-serials="${_esc(item.productId)}" title="تعديل الأرقام"><i class="fas fa-pen"></i></button><span class="qty-num">${item.qty}</span></div>`
             : `<div class="qty-ctrl">
             <button class="qty-btn" data-mid="${_esc(item.productId)}" data-d="-1">−</button>
-            <span class="qty-num">${item.qty}</span>
+            <input class="qty-num" style="width:72px" type="number" min="0.001" step="any" data-quantity="${_esc(item.productId)}" value="${item.qty}" aria-label="الكمية">
             <button class="qty-btn" data-mid="${_esc(item.productId)}" data-d="1">+</button>
           </div>`}
           <div style="min-width:68px;text-align:left;font-weight:700;font-size:.84rem;color:var(--teal-600)">${Fmt.money(item.total)}</div>
@@ -656,6 +657,11 @@ const SalesPage = (() => {
       }).join('');
 
       body.querySelectorAll('.qty-btn[data-d]').forEach(b=>b.addEventListener('click',()=>changeQty(b.dataset.mid, parseInt(b.dataset.d))));
+      body.querySelectorAll('[data-quantity]').forEach(input=>input.onchange=()=>{
+        const item=_cart.find(i=>i.productId===input.dataset.quantity),product=_allProducts.find(p=>p.id===input.dataset.quantity),qty=Number(input.value);
+        if(!Number.isFinite(qty)||qty<=0||qty>_stockOf(product)||(!['متر','كيلو','لتر'].includes(product.saleUnit||product.unit)&&!Number.isInteger(qty))){Toast.err('كمية غير صحيحة','راجع الكمية ووحدة البيع والرصيد');updateCartUI();return;}
+        item.qty=qty;item.price=_priceFor(product,qty);item.total=qty*item.price;updateCartUI();
+      });
       body.querySelectorAll('[data-edit-serials]').forEach(b=>b.addEventListener('click',()=>{ const pr=_allProducts.find(m=>m.id===b.dataset.editSerials); if(pr)_pickAndAdd(pr); }));
       body.querySelectorAll('.ci-del').forEach(b=>b.addEventListener('click',()=>removeFromCart(b.dataset.mid)));
       document.getElementById('checkoutBtn')?.removeAttribute('disabled');

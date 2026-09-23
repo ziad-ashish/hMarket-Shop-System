@@ -36,6 +36,7 @@ const PurchasesPage = (() => {
   <div class="tabs" id="poTabs" style="margin-bottom:.8rem">
     <button class="tab-btn active" data-pf="all">الكل</button>
     <button class="tab-btn" data-pf="مفتوح">مفتوحة</button>
+    <button class="tab-btn" data-pf="فاتورة مستلمة">فواتير مصوّرة</button>
     <button class="tab-btn" data-pf="مستلم جزئياً">جزئي</button>
     <button class="tab-btn" data-pf="مستلم">مستلمة</button>
     <button class="tab-btn" data-pf="ملغي">ملغاة</button>
@@ -91,6 +92,7 @@ const PurchasesPage = (() => {
       _all = await DB.getPurchases() || [];
 
       const open    = _all.filter(p => p.status === 'مفتوح');
+      const captured = _all.filter(p => p.status === 'فاتورة مستلمة');
       const partial = _all.filter(p => p.status === 'مستلم جزئياً');
       const done    = _all.filter(p => p.status === 'مستلم');
       const total   = _all.reduce((a, p) => a + (p.total_cost || 0), 0);
@@ -98,6 +100,7 @@ const PurchasesPage = (() => {
       document.getElementById('poStats').innerHTML = `
         <div class="stat-card c-amber"><div class="sc-header"><div class="sc-icon"><i class="fas fa-cart-flatbed"></i></div></div><div class="sc-val">${_all.length}</div><div class="sc-label">إجمالي الأوامر</div></div>
         <div class="stat-card c-err"><div class="sc-header"><div class="sc-icon"><i class="fas fa-clock"></i></div></div><div class="sc-val">${open.length}</div><div class="sc-label">مفتوحة</div></div>
+        <div class="stat-card c-amber"><div class="sc-header"><div class="sc-icon"><i class="fas fa-file-image"></i></div></div><div class="sc-val">${captured.length}</div><div class="sc-label">فواتير مصوّرة تنتظر المخزون</div></div>
         <div class="stat-card c-warn"><div class="sc-header"><div class="sc-icon"><i class="fas fa-box-open"></i></div></div><div class="sc-val">${partial.length}</div><div class="sc-label">مستلمة جزئياً</div></div>
         <div class="stat-card c-ok"><div class="sc-header"><div class="sc-icon"><i class="fas fa-check"></i></div></div><div class="sc-val">${done.length}</div><div class="sc-label">مستلمة بالكامل</div></div>`;
 
@@ -105,7 +108,8 @@ const PurchasesPage = (() => {
       const tabs = document.querySelectorAll('#poTabs .tab-btn');
       if (tabs[0]) tabs[0].innerHTML = `الكل <span class="badge bdg-slate">${_all.length}</span>`;
       if (tabs[1]) tabs[1].innerHTML = `مفتوحة <span class="badge bdg-err">${open.length}</span>`;
-      if (tabs[3]) tabs[3].innerHTML = `مستلمة <span class="badge bdg-ok">${done.length}</span>`;
+      if (tabs[2]) tabs[2].innerHTML = `فواتير مصوّرة <span class="badge bdg-amber">${captured.length}</span>`;
+      if (tabs[4]) tabs[4].innerHTML = `مستلمة <span class="badge bdg-ok">${done.length}</span>`;
 
       renderTable();
     } catch(e) { Toast.err('خطأ', e.message); }
@@ -134,7 +138,7 @@ const PurchasesPage = (() => {
       if (pager) pager.innerHTML = ''; return;
     }
 
-    const statusColor = { 'مفتوح': 'bdg-warn', 'مستلم جزئياً': 'bdg-amber', 'مستلم': 'bdg-ok', 'ملغي': 'bdg-err' };
+    const statusColor = { 'مفتوح': 'bdg-warn', 'فاتورة مستلمة': 'bdg-amber', 'مستلم جزئياً': 'bdg-amber', 'مستلم': 'bdg-ok', 'ملغي': 'bdg-err' };
 
     const pg = Paginator(list, 12);
     const draw = () => {
@@ -150,7 +154,7 @@ const PurchasesPage = (() => {
             <div class="td-actions">
               <button class="btn btn-ghost btn-icon sm" data-action="view"    data-id="${p.id}" title="عرض"><i class="fas fa-eye"></i></button>
               ${p.status !== 'مستلم' && p.status !== 'ملغي' ?
-                `<button class="btn btn-ghost btn-icon sm" data-action="receive" data-id="${p.id}" title="استلام البضاعة" style="color:var(--ok)"><i class="fas fa-box-open"></i></button>
+                `<button class="btn btn-ghost btn-icon sm" data-action="receive" data-id="${p.id}" title="${p.status === 'فاتورة مستلمة' ? 'إضافة المنتجات للمخزون' : 'استلام البضاعة'}" style="color:var(--ok)"><i class="fas fa-box-open"></i></button>
                  <button class="btn btn-ghost btn-icon sm" data-action="cancel"  data-id="${p.id}" data-num="${p.po_num}" title="إلغاء" style="color:var(--err)"><i class="fas fa-ban"></i></button>`
                 : ''}
             </div>
@@ -173,7 +177,7 @@ const PurchasesPage = (() => {
 
   /* ── عرض تفاصيل الأمر ─────────────────────────────── */
   function _viewPO(p) {
-    const statusColor = { 'مفتوح': '#b45309', 'مستلم جزئياً': '#d97706', 'مستلم': '#16a34a', 'ملغي': '#dc2626' };
+    const statusColor = { 'مفتوح': '#b45309', 'فاتورة مستلمة': '#d97706', 'مستلم جزئياً': '#d97706', 'مستلم': '#16a34a', 'ملغي': '#dc2626' };
     const body = `
       <div style="margin-bottom:1rem">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
@@ -184,9 +188,12 @@ const PurchasesPage = (() => {
           المورد: <strong>${p.supplier_name || '—'}</strong> |
           تاريخ الإنشاء: <strong>${p.created_at ? p.created_at.split('T')[0] : '—'}</strong>
           ${p.received_at ? ` | تاريخ الاستلام: <strong>${p.received_at.split('T')[0]}</strong>` : ''}
+          ${p.invoice_date ? ` | تاريخ الفاتورة: <strong>${p.invoice_date}</strong>` : ''}
+          ${p.supplier_invoice_num ? ` | رقم فاتورة المورد: <strong>${_esc(p.supplier_invoice_num)}</strong>` : ''}
         </div>
         ${p.notes ? `<div style="font-size:.8rem;color:var(--tx-3);margin-top:.4rem">ملاحظات: ${p.notes}</div>` : ''}
       </div>
+      ${p.has_invoice_image ? `<div id="purchaseInvoiceImage" style="margin-bottom:1rem;padding:.6rem;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);text-align:center"><span style="color:var(--tx-3)">جارٍ تحميل صورة الفاتورة…</span></div>` : ''}
       <table class="dtable">
         <thead><tr><th>الصنف</th><th>الكمية المطلوبة</th><th>الكمية المستلمة</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
         <tbody>
@@ -209,12 +216,16 @@ const PurchasesPage = (() => {
       size: 'lg',
       body,
       foot: `${p.status !== 'مستلم' && p.status !== 'ملغي' ?
-        `<button class="btn btn-primary" id="receiveFromViewBtn"><i class="fas fa-box-open"></i> استلام البضاعة</button>` : ''}
+        `<button class="btn btn-primary" id="receiveFromViewBtn"><i class="fas fa-box-open"></i> ${p.status === 'فاتورة مستلمة' ? 'إضافة المنتجات للمخزون' : 'استلام البضاعة'}</button>` : ''}
         <button class="btn btn-ghost" onclick="Modal.close()">إغلاق</button>`,
     });
     document.getElementById('receiveFromViewBtn')?.addEventListener('click', () => {
       Modal.close(); _receiveModal(p);
     });
+    if (p.has_invoice_image) DB.getPurchaseInvoiceImage(p.id).then(src => {
+      const host = document.getElementById('purchaseInvoiceImage');
+      if (host && src) host.innerHTML = `<img src="${src}" alt="صورة فاتورة المورد" style="display:block;max-width:100%;max-height:520px;margin:auto;object-fit:contain;border-radius:7px;background:#fff">`;
+    }).catch(error => { const host = document.getElementById('purchaseInvoiceImage'); if (host) host.textContent = error.message; });
   }
 
   /* ── استلام البضاعة ─────────────────────────────────── */
@@ -243,9 +254,9 @@ const PurchasesPage = (() => {
       </table>`;
 
     Modal.open({
-      title: `<i class="fas fa-box-open"></i> استلام — ${_esc(p.po_num)}`,
+      title: `<i class="fas fa-box-open"></i> ${p.status === 'فاتورة مستلمة' ? 'إضافة منتجات الفاتورة للمخزون' : 'استلام'} — ${_esc(p.po_num)}`,
       size: 'lg', body,
-      foot: `<button class="btn btn-primary" id="confirmReceiveBtn"><i class="fas fa-check"></i> تأكيد الاستلام</button>
+      foot: `<button class="btn btn-primary" id="confirmReceiveBtn"><i class="fas fa-check"></i> ${p.status === 'فاتورة مستلمة' ? 'إضافة المنتجات للمخزون' : 'تأكيد الاستلام'}</button>
              <button class="btn btn-ghost" onclick="Modal.close()">إلغاء</button>`,
     });
 
