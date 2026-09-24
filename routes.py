@@ -117,6 +117,10 @@ def register_routes(app):
     def get_health_check():
         return _resp(_api.get_health_check())
 
+    @app.route("/api/create_performance_indexes", methods=["POST"])
+    def create_performance_indexes():
+        return _resp(_api.create_performance_indexes())
+
     # ── CUSTOMERS ──────────────────────────────────────────────
     @app.route("/api/get_customers")
     def get_customers():

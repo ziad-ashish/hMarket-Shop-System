@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 // One durable draft per account. Saves are serialized; a stale tab cannot overwrite it.
 const PosDraft = (() => {

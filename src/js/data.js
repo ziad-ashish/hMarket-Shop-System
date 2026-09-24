@@ -150,7 +150,11 @@ const DB = {
   },
 
   /* ── PRODUCTS ──────────────────────────────────────── */
-  async getProducts()      { return _IS_FLASK ? (await _api('get_products')).map(m=>this._normProduct(m)) : _LS.getProducts(); },
+  async getProducts(limit=100, offset=0, q='') { 
+    if (!_IS_FLASK) return _LS.getProducts();
+    const result = await _api('get_products', {params:{limit, offset, q}});
+    return result.products ? result.products.map(m=>this._normProduct(m)) : (result.map ? result.map(m=>this._normProduct(m)) : []);
+  },
   async getProduct(id)     { return _IS_FLASK ? this._normProduct(await _api(`get_product/${id}`)) : _LS.getProduct(id); },
   async getProductByBarcode(barcode) {
     if (_IS_FLASK) {
@@ -176,9 +180,13 @@ const DB = {
   async getStockAgingReport() { return _api('get_stock_aging_report'); },
 
   /* ── SERIAL / IMEI + WARRANTY ─────────────────────────── */
-  async getSerialUnits(productId=null, status=null, q=null) {
-    const params={}; if(productId)params.product_id=productId; if(status)params.status=status; if(q)params.q=q;
-    return _api('get_serial_units', {params});
+  async getSerialUnits(productId=null, status=null, q=null, limit=100, offset=0) {
+    const params={limit, offset}; 
+    if(productId)params.product_id=productId; 
+    if(status)params.status=status; 
+    if(q)params.q=q;
+    const result = await _api('get_serial_units', {params});
+    return result.units || (result.map ? result : []);
   },
   async addSerialUnits(data) { return _api('add_serial_units', {body:this._withUser(data)}); },
   async updateSerialUnit(id, data) { return _api(`update_serial_unit/${id}`, {body:this._withUser(data)}); },
@@ -208,7 +216,11 @@ const DB = {
   async searchProducts(q)  { return _IS_FLASK ? (await _api('search_products',{params:{q}})).map(m=>this._normProduct(m)) : (await _LS.getProducts()).filter(m=>m.name.includes(q)); },
 
   /* ── CUSTOMERS ──────────────────────────────────────── */
-  async getCustomers()       { return _IS_FLASK ? (await _api('get_customers')).map(p=>this._normPat(p)) : _LS.getCustomers(); },
+  async getCustomers(limit=100, offset=0, q='')       { 
+    if (!_IS_FLASK) return _LS.getCustomers();
+    const result = await _api('get_customers', {params:{limit, offset, q}});
+    return result.customers ? result.customers.map(p=>this._normPat(p)) : (result.map ? result.map(p=>this._normPat(p)) : []);
+  },
   async getCustomer(id)      { return _IS_FLASK ? this._normPat(await _api(`get_customer/${id}`)) : _LS.getCustomer(id); },
   async addCustomer(data)    {
     if (_IS_FLASK) return _api('add_customer', {body: this._withUser(this._toSnakePat(data))});
@@ -240,7 +252,11 @@ const DB = {
   },
 
   /* ── SALES ──────────────────────────────────────────── */
-  async getSales()          { return _IS_FLASK ? (await _api('get_sales')).map(s=>this._normSale(s)) : _LS.getSales(); },
+  async getSales(limit=100, offset=0) { 
+    if (!_IS_FLASK) return _LS.getSales();
+    const result = await _api('get_sales', {params:{limit, offset}});
+    return result.sales ? result.sales.map(s=>this._normSale(s)) : (result.map ? result.map(s=>this._normSale(s)) : []);
+  },
   async getSale(id)         { return _IS_FLASK ? this._normSale(await _api(`get_sale/${id}`)) : _LS.getSale(id); },
   async addSale(data)       {
     if (_IS_FLASK) return _api('add_sale', {body: this._withUser({...data,

@@ -1,4 +1,4 @@
-/* ════════════════════════════════════════════════════════════
+﻿/* ════════════════════════════════════════════════════════════
    THEME  —  Light/Dark mode + accent color
    Works purely by overriding CSS custom properties at runtime;
    no existing stylesheet rules are modified.
