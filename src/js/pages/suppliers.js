@@ -140,7 +140,7 @@ const SuppliersPage = (() => {
       tbody.innerHTML=pg.slice().map(s=>`
         <tr>
           <td><code style="font-size:.75rem">${_esc(s.id)}</code></td>
-          <td class="font-bold">${_esc(s.name)}</td>
+          <td><button type="button" class="supplier-name-link" data-action="view" data-id="${s.id}" title="عرض ملف الشركة الكامل">${_esc(s.name)}</button></td>
           <td>${_esc(s.contact)}</td>
           <td dir="ltr">${_esc(s.phone)}</td>
           <td><span class="badge bdg-slate">${_esc(s.paymentTerms)}</span></td>
@@ -246,30 +246,73 @@ const SuppliersPage = (() => {
     } catch(e){Toast.err('خطأ',e.message);}
   }
 
-  function viewSup(id) {
+  async function viewSup(id) {
     const s=_allSups.find(x=>x.id===id); if(!s) return;
     const products=_allProducts.filter(m=>m.supplierId===id);
+    Modal.open({title:`<i class="fas fa-building"></i> ${_esc(s.name)}`,size:'lg',body:'<div class="empty-state"><div class="es-icon an-spin"><i class="fas fa-circle-notch"></i></div><h3 class="es-title">جارٍ تحميل ملف الشركة...</h3></div>',foot:'<button class="btn btn-ghost" onclick="Modal.close()">إغلاق</button>'});
+    let purchases=[];
+    try { purchases=(await DB.getPurchases()||[]).filter(p=>p.supplier_id===id); }
+    catch(error){Toast.err('تعذر تحميل معاملات المورد',error.message);}
+    const activePurchases=purchases.filter(p=>p.status!=='ملغي');
+    const totalValue=activePurchases.reduce((sum,p)=>sum+Number(p.total_cost||0),0);
+    const receivedValue=activePurchases.filter(p=>p.status==='مستلم').reduce((sum,p)=>sum+Number(p.total_cost||0),0);
+    const invoiceCount=purchases.filter(p=>p.supplier_invoice_num||p.has_invoice_image||p.source==='captured_invoice').length;
+    const statusClass=status=>({'مفتوح':'bdg-warn','فاتورة مستلمة':'bdg-amber','مستلم جزئياً':'bdg-amber','مستلم':'bdg-ok','ملغي':'bdg-err'}[status]||'bdg-slate');
     Modal.open({
       title:`<i class="fas fa-building"></i> ${_esc(s.name)}`,
       size:'lg',
       body:`
-        <div class="detail-row"><span class="dr-label">جهة الاتصال</span><span class="dr-val">${_esc(s.contact)}</span></div>
-        <div class="detail-row"><span class="dr-label">الهاتف</span><span class="dr-val" dir="ltr">${_esc(s.phone)}</span></div>
-        <div class="detail-row"><span class="dr-label">البريد</span><span class="dr-val" dir="ltr">${_esc(s.email||'—')}</span></div>
-        <div class="detail-row"><span class="dr-label">العنوان</span><span class="dr-val">${_esc(s.address||'—')}</span></div>
-        <div class="detail-row"><span class="dr-label">الرقم الضريبي</span><span class="dr-val" dir="ltr">${_esc(s.taxNum||'—')}</span></div>
-        <div class="detail-row"><span class="dr-label">شروط الدفع</span><span class="dr-val">${_esc(s.paymentTerms)}</span></div>
-        <div class="detail-row"><span class="dr-label">التقييم</span><span class="dr-val">${renderStars(s.rating)}</span></div>
-        <div class="detail-row"><span class="dr-label">الحالة</span><span class="dr-val"><span class="badge ${s.status==='نشط'?'bdg-ok':'bdg-err'}">${_esc(s.status)}</span></span></div>
-        <div class="divider"></div>
-        <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem"><i class="fas fa-boxes-stacked" style="color:var(--teal-500)"></i> الأصناف المرتبطة (${products.length})</div>
-        ${products.length?products.map(m=>`
-          <div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border-2);font-size:.84rem">
-            <span>${_esc(m.name)}</span><span class="badge bdg-teal">${Fmt.num(m.stock)} ${_esc(m.unit)}</span>
-          </div>`).join(''):`<p style="color:var(--tx-3);font-size:.84rem">لا توجد أصناف مرتبطة</p>`}`,
+        <div class="supplier-profile-summary">
+          <div><i class="fas fa-cart-flatbed"></i><strong>${purchases.length}</strong><span>معاملة شراء</span></div>
+          <div><i class="fas fa-file-invoice"></i><strong>${invoiceCount}</strong><span>فاتورة مورد</span></div>
+          <div><i class="fas fa-coins"></i><strong>${Fmt.money(totalValue)}</strong><span>إجمالي التعاملات</span></div>
+          <div><i class="fas fa-circle-check"></i><strong>${Fmt.money(receivedValue)}</strong><span>مشتريات مستلمة</span></div>
+        </div>
+        <div class="supplier-profile-tabs" role="tablist">
+          <button class="active" data-sup-tab="info"><i class="fas fa-address-card"></i> بيانات الشركة</button>
+          <button data-sup-tab="purchases"><i class="fas fa-receipt"></i> المعاملات والفواتير <span>${purchases.length}</span></button>
+          <button data-sup-tab="products"><i class="fas fa-boxes-stacked"></i> الأصناف <span>${products.length}</span></button>
+        </div>
+        <section class="supplier-tab-panel active" data-sup-panel="info">
+          <div class="supplier-info-grid">
+            <div class="detail-row"><span class="dr-label">جهة الاتصال</span><span class="dr-val">${_esc(s.contact)}</span></div>
+            <div class="detail-row"><span class="dr-label">الهاتف</span><span class="dr-val" dir="ltr">${_esc(s.phone)}</span></div>
+            <div class="detail-row"><span class="dr-label">البريد</span><span class="dr-val" dir="ltr">${_esc(s.email||'—')}</span></div>
+            <div class="detail-row"><span class="dr-label">العنوان</span><span class="dr-val">${_esc(s.address||'—')}</span></div>
+            <div class="detail-row"><span class="dr-label">الرقم الضريبي</span><span class="dr-val" dir="ltr">${_esc(s.taxNum||'—')}</span></div>
+            <div class="detail-row"><span class="dr-label">شروط الدفع</span><span class="dr-val">${_esc(s.paymentTerms)}</span></div>
+            <div class="detail-row"><span class="dr-label">التقييم</span><span class="dr-val">${renderStars(s.rating)}</span></div>
+            <div class="detail-row"><span class="dr-label">الحالة</span><span class="dr-val"><span class="badge ${s.status==='نشط'?'bdg-ok':'bdg-err'}">${_esc(s.status)}</span></span></div>
+          </div>
+        </section>
+        <section class="supplier-tab-panel" data-sup-panel="purchases">
+          ${purchases.length?`<div class="tbl-wrap"><table class="dtable supplier-history-table"><thead><tr><th>رقم الأمر</th><th>فاتورة المورد</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th><th></th></tr></thead><tbody>${purchases.map(p=>`<tr><td><strong>${_esc(p.po_num||'—')}</strong></td><td>${_esc(p.supplier_invoice_num||'—')}${p.has_invoice_image?' <i class="fas fa-image" title="توجد صورة للفاتورة"></i>':''}</td><td>${Fmt.dateShort(p.invoice_date||(p.created_at||'').split('T')[0])}</td><td class="font-bold">${Fmt.money(p.total_cost||0)}</td><td><span class="badge ${statusClass(p.status)}">${_esc(p.status)}</span></td><td><button class="btn btn-ghost btn-icon sm" data-view-supplier-purchase="${_esc(p.id)}" title="تفاصيل الفاتورة"><i class="fas fa-eye"></i></button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-state"><div class="es-icon"><i class="fas fa-receipt"></i></div><h3 class="es-title">لا توجد معاملات مسجلة مع هذا المورد</h3></div>'}
+        </section>
+        <section class="supplier-tab-panel" data-sup-panel="products">
+          ${products.length?products.map(m=>`<div class="supplier-product-row"><span><strong>${_esc(m.name)}</strong><small>${_esc(m.category||'بدون تصنيف')}</small></span><span class="badge bdg-teal">${Fmt.num(m.stock)} ${_esc(m.unit)}</span></div>`).join(''):'<div class="empty-state"><h3 class="es-title">لا توجد أصناف مرتبطة</h3></div>'}
+        </section>`,
       foot:`<button class="btn btn-outline" onclick="Modal.close();SuppliersPage.openEdit('${id}')"><i class="fas fa-pen"></i> تعديل</button>
             <button class="btn btn-ghost" onclick="Modal.close()">إغلاق</button>`,
     });
+    document.querySelectorAll('[data-sup-tab]').forEach(button=>button.addEventListener('click',()=>{
+      document.querySelectorAll('[data-sup-tab]').forEach(x=>x.classList.toggle('active',x===button));
+      document.querySelectorAll('[data-sup-panel]').forEach(x=>x.classList.toggle('active',x.dataset.supPanel===button.dataset.supTab));
+    }));
+    document.querySelectorAll('[data-view-supplier-purchase]').forEach(button=>button.addEventListener('click',()=>_viewSupplierPurchase(id,button.dataset.viewSupplierPurchase)));
+  }
+
+  async function _viewSupplierPurchase(supplierId,purchaseId) {
+    try {
+      const p=await DB.getPurchase(purchaseId);if(!p)return;
+      Modal.open({title:`<i class="fas fa-file-invoice"></i> ${_esc(p.po_num)}`,size:'lg',body:`
+        <div class="supplier-invoice-meta"><span>رقم فاتورة المورد: <strong>${_esc(p.supplier_invoice_num||'—')}</strong></span><span>تاريخ الفاتورة: <strong>${Fmt.dateShort(p.invoice_date)}</strong></span><span>الحالة: <strong>${_esc(p.status)}</strong></span></div>
+        ${p.notes?`<p class="supplier-invoice-notes">${_esc(p.notes)}</p>`:''}
+        <div class="tbl-wrap"><table class="dtable"><thead><tr><th>الصنف</th><th>المطلوب</th><th>المستلم</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>${(p.items||[]).map(i=>`<tr><td>${_esc(i.product_name)}</td><td>${Fmt.num(i.qty_ordered)}</td><td>${Fmt.num(i.qty_received)}</td><td>${Fmt.money(i.unit_cost)}</td><td class="font-bold">${Fmt.money(i.total_cost)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="4">الإجمالي</td><td class="font-bold">${Fmt.money(p.total_cost)}</td></tr></tfoot></table></div>
+        ${p.has_invoice_image?'<div id="supplierInvoiceImage" class="supplier-invoice-image"><i class="fas fa-circle-notch fa-spin"></i> جارٍ تحميل صورة الفاتورة...</div>':''}`,
+        foot:`<button class="btn btn-outline" id="backToSupplier"><i class="fas fa-arrow-right"></i> ملف الشركة</button><button class="btn btn-ghost" onclick="Modal.close()">إغلاق</button>`});
+      document.getElementById('backToSupplier')?.addEventListener('click',()=>viewSup(supplierId));
+      if(p.has_invoice_image)DB.getPurchaseInvoiceImage(p.id).then(src=>{const host=document.getElementById('supplierInvoiceImage');if(host&&src)host.innerHTML=`<img src="${src}" alt="صورة فاتورة المورد">`;}).catch(error=>{const host=document.getElementById('supplierInvoiceImage');if(host)host.textContent=error.message;});
+    } catch(error){Toast.err('تعذر فتح الفاتورة',error.message);}
   }
 
   function deleteSup(id) {

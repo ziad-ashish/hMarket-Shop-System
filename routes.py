@@ -199,6 +199,10 @@ def register_routes(app):
     def get_sale(sale_id):
         return _resp(_api.get_sale(sale_id))
 
+    @app.route("/api/get_sale_payment_proof/<sale_id>")
+    def get_sale_payment_proof(sale_id):
+        return _resp(_api.get_sale_payment_proof(sale_id))
+
     @app.route("/api/search_sales")
     def search_sales():
         return _resp(_api.search_sales(request.args.get("q", ""), request.args.get("limit", 5, type=int)))

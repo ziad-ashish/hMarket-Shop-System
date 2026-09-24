@@ -450,7 +450,7 @@ const BarcodeGenerator = (() => {
 /* ── DEVICE SETTINGS (printer / barcode scanner — per-terminal, local only) ── */
 const DeviceSettings = (() => {
   const KEY = 'ph_device_settings';
-  const DEFAULTS = { paperWidth: '80', autoPrint: false, barcodeScan: true, soundOnScan: true };
+  const DEFAULTS = { paperWidth: '80', receiptPrinter: true, labelPrinter: true, autoPrint: false, barcodeScan: true, cameraEnabled: true, soundOnScan: true };
   function get() {
     try { return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY)) || {}) }; }
     catch { return { ...DEFAULTS }; }
@@ -466,6 +466,7 @@ const DeviceSettings = (() => {
 /* ── PRINT ──────────────────────────────────────────────── */
 // Robust printing helper supporting PyWebView, Electron, and standard web browsers via isolated iframe
 function printElement(id, customTitle = '') {
+  if (!DeviceSettings.get().receiptPrinter) { Toast.warn('الطابعة موقوفة','فعّل طابعة الفواتير من الإعدادات ‹ الطباعة والأجهزة'); return false; }
   const el = typeof id === 'string' ? document.getElementById(id) : id;
   if (!el) { Toast.err('تعذر الطباعة', 'لم يتم العثور على المحتوى المطلوب طباعته'); return; }
 
@@ -513,7 +514,7 @@ function printElement(id, customTitle = '') {
       .rcp-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; line-height: 1.35; color: #000; }
       .rcp-row.total { font-weight: 800; font-size: 13px; border-top: 1.5px solid #000; padding-top: 5px; margin-top: 5px; }
       .rcp-barcode { text-align: center; margin: 10px auto 4px auto; width: 100%; max-width: 220px; }
-      .rcp-barcode svg { width: 100%; height: 38px; margin: 0 auto; display: block; }
+      .rcp-barcode svg { width: 100%; height: 38px; margin: 0 auto; display: block; filter: none !important; }
       .rcp-foot-note { text-align: center; font-size: 10px; color: #444; margin-top: 8px; line-height: 1.4; }
     `;
   } else if (isBarcodeSheet) {
@@ -568,10 +569,12 @@ function printElement(id, customTitle = '') {
   };
   frame.contentWindow.addEventListener('afterprint', () => setTimeout(() => frame.remove(), 100));
   setTimeout(runPrint, 250);
+  return true;
 }
 
 /* ── BARCODE STICKERS PRINT HELPER ───────────────────────── */
 function printBarcodeStickers(product, count = 1, shopName = 'تك ماركت') {
+  if (!DeviceSettings.get().labelPrinter) { Toast.warn('طابعة الملصقات موقوفة','فعّلها من الإعدادات ‹ الطباعة والأجهزة'); return false; }
   if (!product) return;
   const barcode = product.barcode || product.id || '00000000';
   const svg = BarcodeGenerator.generateSVG(barcode, { height: 26, includeText: true });
@@ -601,4 +604,5 @@ function printBarcodeStickers(product, count = 1, shopName = 'تك ماركت') 
 
   printElement('tempBarcodePrintSheet', `ملصقات باركود - ${product.name}`);
   setTimeout(() => container.remove(), 2000);
+  return true;
 }

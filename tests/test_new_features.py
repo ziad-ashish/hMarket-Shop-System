@@ -63,7 +63,7 @@ class ShopFeaturesTests(unittest.TestCase):
         pid = self._phone()
         dup = json.loads(self.api.add_serial_units(json.dumps({"product_id": pid, "serials": ["353510000000002"]})))
         self.assertFalse(dup["ok"])
-        unit = _ok(self.api.get_serial_units(pid, "متاح"))[0]
+        unit = _ok(self.api.get_serial_units(pid, "متاح"))["units"][0]
         _ok(self.api.update_serial_unit(unit["id"], json.dumps({"status": "تالف"})))
         self.assertEqual(_ok(self.api.get_product(pid))["stock"], 1)
         blocked = json.loads(self.api.update_product(pid, json.dumps({"stock": 99})))

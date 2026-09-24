@@ -262,7 +262,8 @@ const ProductsPage = (() => {
     const cats = [...new Set([...(categories || []), ...(p?.category ? [p.category] : [])])];
     const catOptions = cats.map(c => `<option value="${_esc(c)}" ${p?.category === c ? 'selected' : ''}>${_esc(c)}</option>`).join('');
     const suppOptions = (suppliers || []).map(s => `<option value="${_esc(s.id)}" ${p?.supplierId === s.id ? 'selected' : ''}>${_esc(s.name)}</option>`).join('');
-    const unitOptions = sel => [...new Set([...UNITS, sel].filter(Boolean))].map(u => `<option ${u === sel ? 'selected' : ''}>${_esc(u)}</option>`).join('');
+    const unitOptions = [...new Set([...UNITS, p?.saleUnit, p?.purchaseUnit, p?.unit].filter(Boolean))]
+      .map(u => `<option value="${_esc(u)}"></option>`).join('');
     const kind = _kindOf(p);
     const v = (x, d = '') => _esc(x ?? d);
     return `
@@ -316,15 +317,15 @@ const ProductsPage = (() => {
       </section>
 
       <section class="mf-section">
-        <div class="mf-section-title"><span>02</span><div><strong>الباركود</strong><small>باركود الشركة على العبوة، وباركود المحل الداخلي للملصقات</small></div></div>
+        <div class="mf-section-title"><span>02</span><div><strong>الباركود <em class="mf-bc-tag mf-bc-tag-neutral">اختياري</em></strong><small>يمكن حفظ الصنف بدون باركود شركة أو باركود محل</small></div></div>
         <div class="mf-grid cols-2">
-          <label class="mf-field"><span>باركود الشركة المصنّعة <em class="mf-bc-tag mf-bc-tag-neutral">موجود على العبوة</em></span>
+          <label class="mf-field"><span>باركود الشركة المصنّعة <em class="mf-bc-tag mf-bc-tag-neutral">اختياري</em></span>
             <div class="mf-barcode-wrap"><div class="mf-barcode-scan-icon"><i class="fas fa-barcode"></i></div>
-              <input id="fProductCompanyBarcode" class="form-control" inputmode="numeric" placeholder="امسح باركود الشركة هنا" value="${v(p?.companyBarcode || p?.barcode)}"></div>
+              <input id="fProductCompanyBarcode" class="form-control" inputmode="numeric" placeholder="اتركه فارغًا إذا لم يوجد باركود" value="${v(p?.companyBarcode || p?.barcode)}"></div>
             <div class="mf-barcode-preview" id="previewCompanyBarcode"></div></label>
-          <label class="mf-field"><span>باركود المحل <em class="mf-bc-tag">داخلي</em></span>
+          <label class="mf-field"><span>باركود المحل <em class="mf-bc-tag">اختياري</em></span>
             <div class="mf-barcode-wrap"><div class="mf-barcode-scan-icon mf-bc-shop"><i class="fas fa-qrcode"></i></div>
-              <input id="fProductShopBarcode" class="form-control" inputmode="numeric" placeholder="امسح أو ولّد باركود المحل" value="${v(p?.shopBarcode)}">
+              <input id="fProductShopBarcode" class="form-control" inputmode="numeric" placeholder="اتركه فارغًا أو ولّد باركودًا داخليًا" value="${v(p?.shopBarcode)}">
               <button type="button" class="mf-bc-gen mf-bc-gen-ph" id="genShopBarcode" title="توليد باركود داخلي جديد"><i class="fas fa-wand-magic-sparkles"></i></button></div>
             <div class="mf-barcode-preview" id="previewShopBarcode"></div></label>
         </div>
@@ -348,9 +349,10 @@ const ProductsPage = (() => {
             <input id="fProductWarranty" class="form-control" type="number" min="0" max="120" value="${v(p?.warrantyMonths, 0)}"></label>
           <label class="mf-field" data-stockonly data-noserial><span><input type="checkbox" id="fProductDivisible" ${p?.conversionFactor > 1 ? 'checked' : ''}> شراء عبوة وبيع بالتجزئة</span><small>مثال: بكرة 100 متر؛ الرصيد والأسعار أدناه للمتر.</small></label>
           <label class="mf-field" data-stockonly><span>وحدة البيع <b>*</b></span>
-            <select id="fProductUnitType" class="form-control">${unitOptions(p?.saleUnit || p?.unit || 'قطعة')}</select></label>
+            <input id="fProductUnitType" class="form-control" list="productUnitsList" maxlength="40" placeholder="اختر أو اكتب وحدة جديدة" value="${v(p?.saleUnit || p?.unit, 'قطعة')}"></label>
           <label class="mf-field" data-stockonly data-noserial><span>وحدة الشراء</span>
-            <select id="fProductPurchaseUnit" class="form-control">${unitOptions(p?.purchaseUnit || p?.unit || 'قطعة')}</select></label>
+            <input id="fProductPurchaseUnit" class="form-control" list="productUnitsList" maxlength="40" placeholder="اختر أو اكتب وحدة جديدة" value="${v(p?.purchaseUnit || p?.unit, 'قطعة')}"></label>
+          <datalist id="productUnitsList">${unitOptions}</datalist>
           <label class="mf-field" data-stockonly data-noserial><span>عدد وحدات البيع في وحدة الشراء</span>
             <input id="fProductConversionFactor" class="form-control" type="number" min="1" value="${v(p?.conversionFactor, 1)}"></label>
           <label class="mf-field" data-stockonly data-noserial><span>الرصيد بوحدة البيع (مثال: أمتار) <b>*</b></span>
@@ -484,7 +486,6 @@ const ProductsPage = (() => {
       description: g('fProductNotes')?.value.trim(),
       trackSerial: isDevice, isService,
     };
-    if (!data.shopBarcode && !isService) data.shopBarcode = _generateShopBarcode();
     if (!isDevice && !isService) data.stock = Number(g('fProductQuantityPerBox')?.value);
     if (_savedImage !== undefined) data.imageData = _savedImage;
     return data;
@@ -521,7 +522,10 @@ const ProductsPage = (() => {
       try {
         const copies = Math.min(200, Math.max(0, Math.floor(Number(document.getElementById('fProductLabelCopies')?.value) || 0)));
         const id = await DB.addProduct(data);
-        if (copies && !data.isService) window.open(`/api/print_labels?product_ids=${encodeURIComponent(id)}&copies=${copies}`, '_blank');
+        if (copies && !data.isService) {
+          if(DeviceSettings.get().labelPrinter)window.open(`/api/print_labels?product_ids=${encodeURIComponent(id)}&copies=${copies}`, '_blank');
+          else Toast.warn('لم تُطبع الملصقات','طابعة الملصقات موقوفة من الإعدادات');
+        }
         Toast.ok('تم الحفظ', `تم حفظ «${data.name}»`);
         Modal.close();
         await _loadData();
@@ -706,6 +710,7 @@ const ProductsPage = (() => {
              <button class="btn btn-ghost" onclick="Modal.close()">إلغاء</button>`,
     });
     document.getElementById('lblPrintBtn')?.addEventListener('click', () => {
+      if(!DeviceSettings.get().labelPrinter){Toast.warn('طابعة الملصقات موقوفة','فعّلها من الإعدادات ‹ الطباعة والأجهزة');return;}
       const copies = Math.max(1, Math.min(200, parseInt(document.getElementById('lblCopies').value) || 12));
       window.open(`/api/print_labels?product_ids=${encodeURIComponent(product.id)}&copies=${copies}`, '_blank');
       Modal.close();

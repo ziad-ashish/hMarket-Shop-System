@@ -42,6 +42,8 @@ const Auth = (() => {
 
 const App = (() => {
 
+  let _globalShortcutsBound = false;
+
   const pages = {
     dashboard: { module: DashboardPage,  label: 'لوحة التحكم' },
     products: { module: ProductsPage,  label: 'الأصناف والمخزون' },
@@ -101,6 +103,7 @@ const App = (() => {
         _updateUserInfo();
         _applyBranding();
         _setupSearch();
+        _setupGlobalShortcuts();
         _setupNotifications();
         _startClock();
         navigate('dashboard');
@@ -509,6 +512,66 @@ const App = (() => {
     // close mobile sidebar
     document.getElementById('sidebar')?.classList.remove('mob-open');
     document.getElementById('mobOverlay')?.classList.remove('on');
+  }
+
+  /* ── GLOBAL KEYBOARD SHORTCUTS ── */
+  function _showShortcutHelp() {
+    const rows = [
+      ['Ctrl + K','الانتقال إلى البحث العام'],['Ctrl + N','بدء فاتورة بيع جديدة'],
+      ['Ctrl + Shift + P','إضافة صنف جديد'],['Ctrl + Shift + C','إضافة عميل جديد'],
+      ['Alt + 1','لوحة التحكم'],['Alt + 2','نقطة البيع'],['Alt + 3','الأصناف والمخزون'],
+      ['Alt + 4','الفواتير'],['Alt + 5','العملاء'],['Alt + 6','الموردون'],
+      ['Alt + 7','الصيانة'],['Alt + 8','التقارير'],['Alt + 9','الإعدادات'],
+      ['F1 داخل البيع','التركيز على بحث الأصناف'],['F2 داخل البيع','إصدار الفاتورة'],
+      ['F3 داخل البيع','تفريغ سلة المشتريات'],['Esc','إغلاق النافذة الحالية'],
+      ['Ctrl + /','عرض هذه القائمة'],
+    ];
+    Modal.open({title:'<i class="fas fa-keyboard"></i> اختصارات لوحة المفاتيح',size:'sm',body:`
+      <p class="form-hint" style="margin-bottom:.8rem">يمكن استخدام الاختصارات من أي شاشة. اختصارات التنقل لا تعمل أثناء الكتابة داخل حقل.</p>
+      <div style="display:grid;gap:.35rem">${rows.map(([key,label])=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.48rem .6rem;border:1px solid var(--border-2);border-radius:7px"><span>${label}</span><kbd dir="ltr" style="white-space:nowrap;padding:.2rem .45rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit">${key}</kbd></div>`).join('')}</div>`,foot:'<button class="btn btn-primary" id="shortcutHelpClose">إغلاق</button>'});
+    document.getElementById('shortcutHelpClose')?.addEventListener('click',()=>Modal.close());
+  }
+
+  function _shortcutNavigate(page) {
+    const item=document.querySelector(`.nav-item[data-page="${page}"]`);
+    if(!item || item.hidden || getComputedStyle(item).display==='none') {
+      Toast.warn('غير متاح','حسابك لا يملك صلاحية فتح هذه الشاشة');
+      return false;
+    }
+    navigate(page);
+    return true;
+  }
+
+  function _setupGlobalShortcuts() {
+    if (_globalShortcutsBound) return;
+    _globalShortcutsBound = true;
+    document.getElementById('shortcutsBtn')?.addEventListener('click',_showShortcutHelp);
+    document.addEventListener('keydown', async e => {
+      const target=e.target, typing=target?.matches?.('input,textarea,select,[contenteditable="true"]');
+      if ((e.ctrlKey || e.metaKey) && e.code === 'Slash') {
+        e.preventDefault(); _showShortcutHelp(); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
+        e.preventDefault(); Modal.close(); const input=document.getElementById('globalSearch'); input?.focus(); input?.select(); return;
+      }
+      if (e.key === 'Escape' && document.getElementById('gModal')?.classList.contains('on') && !Modal.isLocked()) {
+        e.preventDefault(); Modal.close(); return;
+      }
+      if (typing) return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyN') {
+        e.preventDefault(); if(_shortcutNavigate('sales'))setTimeout(()=>document.getElementById('posSearch')?.focus(),250); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyP') {
+        e.preventDefault(); if(_shortcutNavigate('products'))setTimeout(()=>ProductsPage.openAddModal(),300); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyC') {
+        e.preventDefault(); if(_shortcutNavigate('customers'))setTimeout(()=>CustomersPage.openAdd(),300); return;
+      }
+      if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+        const map={Digit1:'dashboard',Digit2:'sales',Digit3:'products',Digit4:'invoices',Digit5:'customers',Digit6:'suppliers',Digit7:'repairs',Digit8:'reports',Digit9:'settings'};
+        if(map[e.code]) { e.preventDefault(); _shortcutNavigate(map[e.code]); }
+      }
+    });
   }
 
   /* ── SIDEBAR ── */

@@ -11,7 +11,8 @@ import api
 
 _lock = Lock()
 BACKUP_RETENTION = 5
-MANAGED_PREFIXES = ('shop_backup_', 'shop_', 'auto_shop_', 'pre_restore_')
+MANAGED_PREFIXES = ('shop_backup_', 'shop_', 'auto_shop_', 'pre_restore_', 'imported_')
+MAX_IMPORT_BYTES = 512 * 1024 * 1024
 
 
 def _prune_managed(folder, prefixes=('shop_backup_', 'shop_', 'auto_shop_')):
@@ -92,6 +93,42 @@ def restore_backup(raw_path, user_id='system'):
         _prune_managed(api.BACKUP_DIR, MANAGED_PREFIXES)
         return {'message': 'تمت الاستعادة بنجاح', 'pre_backup': pre,
                 'restored_from': os.path.basename(selected)}
+
+
+def import_backup(upload, user_id='system'):
+    """Validate an uploaded SQLite backup and add it to managed recovery points."""
+    if not upload or not getattr(upload, 'filename', ''):
+        raise ValueError('اختر ملف نسخة احتياطية')
+    if not upload.filename.lower().endswith('.db'):
+        raise ValueError('الملف يجب أن يكون نسخة SQLite بامتداد .db')
+    os.makedirs(api.BACKUP_DIR, exist_ok=True)
+    stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S_%f')
+    final = os.path.join(api.BACKUP_DIR, f'imported_{stamp}_{uuid.uuid4().hex[:6]}.db')
+    partial = final + '.partial'
+    size = 0
+    try:
+        with open(partial, 'wb') as target:
+            while True:
+                chunk = upload.stream.read(1024 * 1024)
+                if not chunk: break
+                size += len(chunk)
+                if size > MAX_IMPORT_BYTES:
+                    raise ValueError('حجم النسخة أكبر من 512 ميجابايت')
+                target.write(chunk)
+        if not size: raise ValueError('ملف النسخة فارغ')
+        with closing(sqlite3.connect(f'file:{partial}?mode=ro', uri=True)) as con:
+            _check_database(con)
+        os.replace(partial, final)
+        with closing(api._conn()) as con:
+            api._audit(con, user_id, 'IMPORT_BACKUP', 'database', os.path.basename(final),
+                       f'استيراد {upload.filename} — {size} bytes')
+            con.commit()
+        _prune_managed(api.BACKUP_DIR, MANAGED_PREFIXES)
+        return {'path': final, 'filename': os.path.basename(final), 'size_kb': round(size / 1024, 1)}
+    finally:
+        if os.path.isfile(partial):
+            try: os.unlink(partial)
+            except OSError: pass
 
 
 def directory():
@@ -182,6 +219,17 @@ def status():
 
 
 def register_routes(app):
+    @app.post('/api/import_backup')
+    def import_backup_route():
+        from shop_ops import permission
+        with closing(api._conn()) as con:
+            if not permission(con,'all'):
+                return jsonify(ok=False,error='استيراد النسخ لمدير النظام فقط'),403
+        try:
+            return jsonify(ok=True,data=import_backup(request.files.get('file'),g.user_id))
+        except (ValueError,OSError,sqlite3.Error) as exc:
+            return jsonify(ok=False,error=str(exc)),400
+
     @app.route('/api/secondary_backup',methods=['GET','POST'])
     def secondary_backup():
         from shop_ops import permission

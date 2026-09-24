@@ -122,6 +122,7 @@ const CameraStudio = (() => {
 
   function close() { active?.close(); }
   function open({mode='photo', title, onPhoto, lookup, onAccept, acceptLabel='استخدام النتيجة', allowAuto=false}={}) {
+    if (typeof DeviceSettings !== 'undefined' && !DeviceSettings.get().cameraEnabled) { Toast.warn('الكاميرا موقوفة','فعّل الكاميرا من الإعدادات ‹ الطباعة والأجهزة'); return null; }
     close();
     const origin = document.activeElement, prefs = preferences(), scanning = mode === 'scan';
     const dialog = document.createElement('dialog'); dialog.className='capture-dialog';

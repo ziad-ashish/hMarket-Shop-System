@@ -140,7 +140,8 @@ def register_camera_routes(app):
                 if d.get("version")!=version:
                     con.rollback();return jsonify(ok=False,error="المسودة تغيرت في نافذة أخرى. أغلقها وافتحها من جديد قبل المتابعة"),409
                 con.execute("INSERT INTO scan_drafts VALUES(?,?,?,?,?) ON CONFLICT(user_id,scope) DO UPDATE SET data=excluded.data,version=excluded.version,updated_at=excluded.updated_at",(g.user_id,scope,json.dumps(clean,ensure_ascii=False),version+1,datetime.now().isoformat()))
-                api._audit(con,g.user_id,"SAVE_SCAN_DRAFT","scan_draft",scope,f"{len(clean)} أصناف — بدون تعديل المخزون")
+                # مسودة العد تتحدث مع كل مسحة؛ ليست تغييراً مالياً أو مخزونياً
+                # ولذلك لا تدخل سجل الرقابة حتى يظل مفيداً وخفيفاً.
                 con.commit();return jsonify(ok=True,data={"items":clean,"version":version+1})
             except (ValueError,TypeError,AttributeError) as e:
                 con.rollback();return jsonify(ok=False,error=str(e)),400

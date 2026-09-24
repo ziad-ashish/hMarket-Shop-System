@@ -10,15 +10,18 @@ const SalesPage = (() => {
   let _catFilter = '';
   let _search    = '';
   let _allProducts   = [];
+  let _posCustomers  = [];
   let _draftCustomer = null, _restoring = true, _checkoutBusy = false;
   let _credit = {name:'', phone:'', paid:0};
+  let _paymentProof = null;
   let _customerType = 'فرد';   // نوع العميل المختار حاليًا في نقطة البيع (فرد/جملة)
   let _activePromos = [];      // العروض النشطة حاليًا (تُحمّل عند فتح الصفحة)
+  let _usePromotions = true;   // يستطيع الكاشير تعطيل عروض الأصناف لفاتورة معينة
 
   /* أفضل عرض نشط لصنف معيّن عند كمية محددة (أكبر خصم منطبق) — يُحسب دائمًا
      على السعر الحالي للصنف (product.price) وليس على قيمة مخزّنة وقت تحميل العروض. */
   function _bestPromoFor(product, qty) {
-    if (!product) return null;
+    if (!product || !_usePromotions) return null;
     const candidates = _activePromos.filter(p => p.product_id === product.id && qty >= (p.min_qty || 1));
     if (!candidates.length) return null;
     let best = null, bestPrice = Infinity;
@@ -129,10 +132,19 @@ const SalesPage = (() => {
         <h3><i class="fas fa-shopping-cart"></i> سلة المشتريات</h3>
         <span class="cart-count" id="cartCount">0</span>
       </div>
-      <div style="padding:.6rem .8rem;border-bottom:1px solid var(--border-2)">
-        <select class="form-control" id="posCustomer" style="font-size:.8rem">
-          <option value="">— عميل عادي —</option>
-        </select>
+      <div class="pos-customer-box">
+        <label for="posCustomerSearch"><i class="fas fa-user"></i> العميل</label>
+        <div class="pos-customer-input-row">
+          <input class="form-control" id="posCustomerSearch" autocomplete="off" maxlength="100" placeholder="اكتب اسم عميل حالي أو جديد" role="combobox" aria-autocomplete="list" aria-controls="posCustomerResults" aria-expanded="false">
+          <button type="button" class="pos-customer-clear" id="posCustomerClear" title="عميل عادي" aria-label="إلغاء اختيار العميل"><i class="fas fa-xmark"></i></button>
+        </div>
+        <input type="hidden" id="posCustomer" value="">
+        <div class="pos-customer-results" id="posCustomerResults" role="listbox" hidden></div>
+        <small id="posCustomerHint">اتركه فارغًا لعميل عادي، أو اضغط Enter لإضافة اسم جديد</small>
+        <div class="pos-price-mode" id="posPriceMode" aria-label="نوع سعر الفاتورة">
+          <button type="button" class="active" data-customer-type="فرد"><i class="fas fa-basket-shopping"></i> سعر قطاعي</button>
+          <button type="button" data-customer-type="جملة"><i class="fas fa-boxes-stacked"></i> سعر جملة</button>
+        </div>
         <label id="loyaltyOption" style="display:none;margin-top:.5rem;font-size:.75rem"><input type="checkbox" id="useLoyalty"> استخدام نقاط الولاء المتاحة</label>
       </div>
       <div class="cart-body" id="cartBody">
@@ -142,6 +154,10 @@ const SalesPage = (() => {
         </div>
       </div>
       <div class="cart-foot">
+        <label class="invoice-promo-toggle" for="usePromotions">
+          <span><i class="fas fa-tags"></i><strong>تفعيل عروض الأصناف</strong><small>طبّق العرض المناسب على هذه الفاتورة</small></span>
+          <input type="checkbox" id="usePromotions" checked><em></em>
+        </label>
         <div class="cart-row"><span class="cr-label">المجموع الفرعي</span><span class="cr-val" id="crSub">0.00 ج.م</span></div>
         <div class="cart-row">
           <span class="cr-label">الخصم (ج.م)</span>
@@ -168,6 +184,16 @@ const SalesPage = (() => {
               <div class="credit-remaining"><span>المتبقي عليه</span><strong id="creditRemaining">0.00 ج.م</strong></div>
             </div>
           </div>
+          <div class="payment-proof-panel" id="paymentProofPanel" hidden>
+            <div class="credit-panel-title"><i class="fas fa-camera"></i><div><strong>إثبات الدفع <b>*</b></strong><small>صورة إيصال التحويل أو عملية البطاقة</small></div></div>
+            <input type="file" id="paymentProofFile" accept="image/jpeg,image/png,image/webp" hidden>
+            <div class="payment-proof-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="paymentProofChoose"><i class="fas fa-image"></i> اختيار صورة</button>
+              <button type="button" class="btn btn-outline btn-sm" id="paymentProofCamera"><i class="fas fa-camera"></i> تصوير الإيصال</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="paymentProofRemove" hidden><i class="fas fa-trash"></i> حذف</button>
+            </div>
+            <div class="payment-proof-preview" id="paymentProofPreview"><i class="fas fa-receipt"></i><span>لم تُضف صورة بعد</span></div>
+          </div>
         </div>
         <button class="checkout-btn" id="checkoutBtn" disabled>
           <i class="fas fa-receipt"></i> إصدار الفاتورة
@@ -179,7 +205,7 @@ const SalesPage = (() => {
   }
 
   async function afterRender() {
-    _restoring=true; _cart = []; _discount = 0; _payMethod = 'نقدي'; _draftCustomer=null; _credit={name:'',phone:'',paid:0}; _useLoyalty=false; _checkoutBusy=false;
+    _restoring=true; _cart = []; _discount = 0; _payMethod = 'نقدي'; _draftCustomer=null; _credit={name:'',phone:'',paid:0}; _paymentProof=null; _useLoyalty=false; _usePromotions=true; _checkoutBusy=false;
     // الصفر هو الوضع الآمن. لا توجد ضريبة إلا إذا قرأنا قيمة موجبة محفوظة فعلياً.
     TAX_RATE = 0;
     _showTax = false;
@@ -221,9 +247,7 @@ const SalesPage = (() => {
         (cats || []).map(c=>`<button class="cat-chip" data-cat="${_esc(c)}">${_esc(c)}</button>`).join('');
 
       // customers list
-      const ps = document.getElementById('posCustomer');
-      if (ps) ps.innerHTML = `<option value="">— عميل عادي —</option>` +
-        (customers || []).map(p=>`<option value="${_esc(p.id)}">${_esc(p.name)}</option>`).join('');
+      _posCustomers = customers || [];
 
       renderGrid();
     } catch(e) { Toast.err('خطأ', e.message); }
@@ -262,6 +286,10 @@ const SalesPage = (() => {
       }
       updateTotals();
     });
+    document.getElementById('usePromotions')?.addEventListener('change',e=>{
+      _usePromotions=e.target.checked;_recalcCartPrices();renderGrid();_persistDraft();
+      Toast.info(_usePromotions?'تم تفعيل العروض':'تم إيقاف العروض',_usePromotions?'سيُطبّق أفضل عرض متاح على الفاتورة':'أسعار العروض لن تُطبّق على هذه الفاتورة',1800);
+    });
 
     document.querySelectorAll('.pay-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
@@ -271,6 +299,11 @@ const SalesPage = (() => {
     document.getElementById('creditCustomerName')?.addEventListener('input',e=>{_credit.name=e.target.value;_persistDraft();});
     document.getElementById('creditPhone')?.addEventListener('input',e=>{_credit.phone=e.target.value;_persistDraft();});
     document.getElementById('creditPaidAmount')?.addEventListener('input',e=>{_credit.paid=Math.max(0,Number(e.target.value)||0);_syncCreditPanel();_persistDraft();});
+    const proofFile=document.getElementById('paymentProofFile');
+    document.getElementById('paymentProofChoose')?.addEventListener('click',()=>proofFile?.click());
+    proofFile?.addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{_setPaymentProof(await CameraStudio.compressFile(file));}catch(error){Toast.err('تعذر قراءة الصورة',error.message);}finally{e.target.value='';}});
+    document.getElementById('paymentProofCamera')?.addEventListener('click',()=>CameraStudio.open({title:'تصوير إثبات الدفع',onPhoto:async image=>_setPaymentProof(image)}));
+    document.getElementById('paymentProofRemove')?.addEventListener('click',()=>_setPaymentProof(null));
 
     document.getElementById('checkoutBtn')?.addEventListener('click', checkout);
     document.getElementById('posCameraBtn')?.addEventListener('click',()=>CameraWorkflows.scan({title:'مسح صنف للبيع',context:'sale',allowAuto:true,acceptLabel:'إضافة للسلة',onAccept:async product=>{
@@ -278,19 +311,21 @@ const SalesPage = (() => {
       if(index<0)_allProducts.push(current);else _allProducts[index]=current;
       if(!addToCart(product.id,product.scanQuantity,product.scanSerial?[product.scanSerial]:null))throw new Error('لم تتم الإضافة. راجع المخزون والكمية المطلوبة.');
     }}));
+    _setupCustomerPicker();
+
     document.getElementById('posCustomer')?.addEventListener('change', async e=>{
       _draftCustomer=e.target.value||null; _useLoyalty=false; document.getElementById('useLoyalty').checked=false; _persistDraft();
-      if(!e.target.value){document.getElementById('loyaltyOption').style.display='none';_syncCreditPanel();_customerType='فرد';_recalcCartPrices();return;}
+      if(!e.target.value){document.getElementById('loyaltyOption').style.display='none';_syncCreditPanel();_setCustomerType('فرد');return;}
       try {
         const [debt,loyalty,customer]=await Promise.all([DB.getCustomerDebt(e.target.value),DB.getLoyalty(e.target.value),DB.getCustomer(e.target.value)]);
         if(debt.balance>0) Toast.warn('تنبيه مديونية',`على العميل دين سابق بقيمة ${Fmt.money(debt.balance)}`);
         const option=document.getElementById('loyaltyOption'); if(option){option.style.display=loyalty.points>0?'block':'none';option.title=`الرصيد ${Number(loyalty.points).toFixed(2)} نقطة`;}
         if(_payMethod==='آجل'&&customer){_credit.name=customer.name||'';_credit.phone=customer.phone||'';_syncCreditPanel();_persistDraft();}
-        _customerType = customer?.customerType==='جملة' ? 'جملة' : 'فرد';
+        _setCustomerType(customer?.customerType==='جملة' ? 'جملة' : 'فرد');
         if(_customerType==='جملة') Toast.info('عميل جملة', 'سيتم تطبيق أسعار الجملة تلقائيًا عند توفر الحد الأدنى للكمية', 2000);
-        _recalcCartPrices();
       } catch(_){}
     });
+    document.getElementById('posPriceMode')?.addEventListener('click',e=>{const button=e.target.closest('[data-customer-type]');if(button)_setCustomerType(button.dataset.customerType);});
     document.getElementById('useLoyalty')?.addEventListener('change',e=>{_useLoyalty=e.target.checked;_persistDraft();});
 
     _setupBarcodeScanner();
@@ -299,15 +334,18 @@ const SalesPage = (() => {
       const saved=await PosDraft.load();
       if(saved) {
         _cart=saved.cart||[];_discount=Number(saved.discount)||0;_payMethod=saved.paymentMethod||_payMethod;
-        _draftCustomer=saved.customerId||null;_credit={name:saved.credit?.name||'',phone:saved.credit?.phone||'',paid:Number(saved.credit?.paid)||0};_useLoyalty=!!saved.useLoyalty;
+        _draftCustomer=saved.customerId||null;_credit={name:saved.credit?.name||'',phone:saved.credit?.phone||'',paid:Number(saved.credit?.paid)||0};_useLoyalty=!!saved.useLoyalty;_usePromotions=saved.usePromotions!==false;
         const needed=await Promise.all(_cart.map(item=>DB.getProduct(item.productId)));
         for(const product of needed.filter(Boolean)){const index=_allProducts.findIndex(m=>m.id===product.id);if(index<0)_allProducts.push(product);else _allProducts[index]=product;}
         document.getElementById('discountInput').value=_discount;
         document.getElementById('posCustomer').value=_draftCustomer||'';
-        if(_draftCustomer){ try{ const p=await DB.getCustomer(_draftCustomer); _customerType=p?.customerType==='جملة'?'جملة':'فرد'; }catch(_){} }
+        if(_draftCustomer){ try{ const p=await DB.getCustomer(_draftCustomer); _customerType=saved.customerType||(p?.customerType==='جملة'?'جملة':'فرد'); if(p)_showSelectedCustomer(p); }catch(_){} }
+        _setCustomerType(saved.customerType||_customerType,false);
         _setPayment(_payMethod, false);
         document.getElementById('loyaltyOption').style.display=_draftCustomer?'':'none';
         document.getElementById('useLoyalty').checked=_useLoyalty;
+        document.getElementById('usePromotions').checked=_usePromotions;
+        _recalcCartPrices();
         if(_cart.length)Toast.info('تم استرجاع المسودة','راجع الكميات والأسعار الحالية قبل إصدار الفاتورة');
       }
       updateCartUI();renderGrid();_restoring=false;
@@ -329,8 +367,92 @@ const SalesPage = (() => {
 
   function _persistDraft() {
     if(_restoring)return;
-    PosDraft.save({cart:_cart,discount:_discount,paymentMethod:_payMethod,customerId:_draftCustomer,
-      useLoyalty:_useLoyalty,credit:_credit});
+    PosDraft.save({cart:_cart,discount:_discount,paymentMethod:_payMethod,customerId:_draftCustomer,customerType:_customerType,
+      useLoyalty:_useLoyalty,usePromotions:_usePromotions,credit:_credit});
+  }
+
+  function _setCustomerType(type,recalc=true) {
+    _customerType=type==='جملة'?'جملة':'فرد';
+    document.querySelectorAll('#posPriceMode [data-customer-type]').forEach(button=>button.classList.toggle('active',button.dataset.customerType===_customerType));
+    if(recalc)_recalcCartPrices();
+    _persistDraft();
+  }
+
+  function _showSelectedCustomer(customer) {
+    const input=document.getElementById('posCustomerSearch');
+    const hint=document.getElementById('posCustomerHint');
+    // Do not erase the live search text while clearing a previous selection.
+    // The caller explicitly clears the input only for reset/checkout actions.
+    if(input&&customer) input.value=customer.name||'';
+    if(hint) hint.innerHTML=customer ? `<i class="fas fa-circle-check"></i> تم اختيار <strong>${_esc(customer.name)}</strong>، وستُضاف الفاتورة لحسابه` : 'اتركه فارغًا لعميل عادي، أو اضغط Enter لإضافة اسم جديد';
+    hint?.classList.toggle('selected',!!customer);
+  }
+
+  function _choosePosCustomer(customer) {
+    const hidden=document.getElementById('posCustomer');
+    const results=document.getElementById('posCustomerResults');
+    if(!hidden)return;
+    hidden.value=customer?.id||'';
+    _showSelectedCustomer(customer);
+    if(results)results.hidden=true;
+    document.getElementById('posCustomerSearch')?.setAttribute('aria-expanded','false');
+    hidden.dispatchEvent(new Event('change'));
+  }
+
+  function _setupCustomerPicker() {
+    const input=document.getElementById('posCustomerSearch');
+    const results=document.getElementById('posCustomerResults');
+    if(!input||!results)return;
+    let requestNo=0;
+    const normalized=value=>String(value||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('ar');
+    const draw=customers=>{
+      const name=input.value.trim();
+      const exact=customers.find(p=>normalized(p.name)===normalized(name));
+      results.innerHTML=customers.map(p=>`<button type="button" role="option" data-customer-id="${_esc(p.id)}"><i class="fas fa-user"></i><span><strong>${_esc(p.name)}</strong>${p.phone?`<small>${_esc(p.phone)}</small>`:''}</span></button>`).join('')+
+        (!exact&&name.length>=2?`<button type="button" class="add-new" data-add-customer="1"><i class="fas fa-user-plus"></i><span><strong>إضافة «${_esc(name)}»</strong><small>كعميل جديد</small></span></button>`:'');
+      results.hidden=!results.children.length;
+      input.setAttribute('aria-expanded',results.hidden?'false':'true');
+    };
+    const search=debounce(async()=>{
+      const name=input.value.trim();
+      const hidden=document.getElementById('posCustomer');
+      if(hidden?.value){hidden.value='';hidden.dispatchEvent(new Event('change'));}
+      else {_draftCustomer=null;_showSelectedCustomer(null);_persistDraft();}
+      if(!name){results.hidden=true;input.setAttribute('aria-expanded','false');return;}
+      const current=++requestNo;
+      try { const found=await DB.getCustomers(12,0,name); if(current===requestNo){_posCustomers=found;draw(found);} }
+      catch(_){ if(current===requestNo)draw(_posCustomers.filter(p=>normalized(p.name).includes(normalized(name))).slice(0,12)); }
+    },180);
+    input.addEventListener('input',search);
+    input.addEventListener('focus',()=>{if(input.value.trim())search();});
+    input.addEventListener('keydown',async e=>{
+      if(e.key==='Escape'){results.hidden=true;input.setAttribute('aria-expanded','false');return;}
+      if(e.key!=='Enter')return;
+      e.preventDefault();
+      const name=input.value.trim();if(name.length<2)return;
+      const exact=_posCustomers.find(p=>normalized(p.name)===normalized(name));
+      if(exact){_choosePosCustomer(exact);return;}
+      await addNew(name);
+    });
+    const addNew=async name=>{
+      try {
+        input.disabled=true;
+        const id=await DB.addCustomer({name,phone:'',quickPos:true,customerType:_customerType});
+        const customer=await DB.getCustomer(id);
+        if(!customer)throw new Error('تعذر قراءة بيانات العميل');
+        if(!_posCustomers.some(p=>p.id===customer.id))_posCustomers.unshift(customer);
+        _choosePosCustomer(customer);Toast.ok('تمت إضافة العميل',customer.name);
+      } catch(error){Toast.err('تعذر إضافة العميل',error.message);}
+      finally{input.disabled=false;input.focus();}
+    };
+    results.addEventListener('mousedown',e=>e.preventDefault());
+    results.addEventListener('click',async e=>{
+      const button=e.target.closest('button');if(!button)return;
+      if(button.dataset.addCustomer){await addNew(input.value.trim());return;}
+      const customer=_posCustomers.find(p=>p.id===button.dataset.customerId);if(customer)_choosePosCustomer(customer);
+    });
+    input.addEventListener('blur',()=>setTimeout(()=>{results.hidden=true;input.setAttribute('aria-expanded','false');},120));
+    document.getElementById('posCustomerClear')?.addEventListener('click',()=>{input.value='';_choosePosCustomer(null);input.focus();});
   }
 
   function _setPayment(method, persist=true) {
@@ -341,6 +463,8 @@ const SalesPage = (() => {
       button.setAttribute('aria-pressed',selected?'true':'false');
     });
     _syncCreditPanel();
+    const proofPanel=document.getElementById('paymentProofPanel');
+    if(proofPanel)proofPanel.hidden=!['بطاقة','تحويل'].includes(method);
     if(method==='آجل'&&!_credit.name){
       const customerId=document.getElementById('posCustomer')?.value;
       if(customerId)DB.getCustomer(customerId).then(customer=>{
@@ -349,6 +473,14 @@ const SalesPage = (() => {
       }).catch(()=>{});
     }
     if(persist)_persistDraft();
+  }
+
+  function _setPaymentProof(image) {
+    _paymentProof=image||null;
+    const preview=document.getElementById('paymentProofPreview');
+    const remove=document.getElementById('paymentProofRemove');
+    if(preview)preview.innerHTML=_paymentProof?`<img src="${_paymentProof}" alt="إثبات الدفع"><span><i class="fas fa-circle-check"></i> تم إرفاق الصورة</span>`:'<i class="fas fa-receipt"></i><span>لم تُضف صورة بعد</span>';
+    if(remove)remove.hidden=!_paymentProof;
   }
 
   function _syncCreditPanel(total=null) {
@@ -712,6 +844,7 @@ const SalesPage = (() => {
       if(!Number.isFinite(_credit.paid)||_credit.paid<0){Toast.warn('المبلغ غير صحيح','اكتب المبلغ الذي دفعه العميل أو اتركه صفرًا');document.getElementById('creditPaidAmount')?.focus();return;}
       if(_credit.paid>total){Toast.warn('المبلغ أكبر من الإجمالي','لا يمكن أن يكون المدفوع أكبر من قيمة الفاتورة');document.getElementById('creditPaidAmount')?.focus();return;}
     }
+    if(['بطاقة','تحويل'].includes(_payMethod)&&!_paymentProof){Toast.warn('إثات الدفع مطلوب','أضف صورة إيصال التحويل أو عملية البطاقة قبل إصدار الفاتورة');document.getElementById('paymentProofChoose')?.focus();return;}
     if(_checkoutBusy)return;
     _checkoutBusy=true;
     const page=document.getElementById('page-sales');page.inert=true;
@@ -739,6 +872,7 @@ const SalesPage = (() => {
         creditCustomerName:_credit.name,
         creditPhone:_credit.phone,
         creditPaidAmount:_credit.paid,
+        paymentProofImage:_paymentProof,
         cashier: cashierName,
         useLoyalty: _useLoyalty,
       });
@@ -769,10 +903,14 @@ const SalesPage = (() => {
 
       Toast.ok('تمت العملية', `تم إصدار ${result.invoiceNum} بقيمة ${Fmt.money(result.total??total)}`);
       PosDraft.completed();_restoring=true;
-      _cart=[]; _discount=0; _draftCustomer=null;_credit={name:'',phone:'',paid:0};_useLoyalty=false;
+      _cart=[]; _discount=0; _draftCustomer=null;_credit={name:'',phone:'',paid:0};_paymentProof=null;_useLoyalty=false;_usePromotions=true;
       document.getElementById('useLoyalty').checked=false;document.getElementById('loyaltyOption').style.display='none';
+      document.getElementById('usePromotions').checked=true;
+      _setCustomerType('فرد',false);
       const di=document.getElementById('discountInput'); if(di) di.value='0';
       const pp=document.getElementById('posCustomer');    if(pp) pp.value='';
+      const customerSearch=document.getElementById('posCustomerSearch');if(customerSearch)customerSearch.value='';_showSelectedCustomer(null);
+      _setPaymentProof(null);
       _syncCreditPanel(0);
 
       // refresh products stock

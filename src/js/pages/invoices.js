@@ -268,9 +268,10 @@ const InvoicesPage = (() => {
     Modal.open({
       title: `<i class="fas fa-receipt"></i> ${s.invoiceNum}`,
       size: 'sm',
-      body: `<div id="invRcpPrint">${_receipt(s)}</div>`,
+      body: `<div id="invRcpPrint">${_receipt(s)}</div>${s.hasPaymentProof?'<div class="invoice-payment-proof" id="invoicePaymentProof" hidden></div>':''}`,
       foot: `
         <button type="button" class="btn btn-ghost" id="invoiceScanBtn">فحص صنف بالكاميرا</button>
+        ${s.hasPaymentProof?'<button type="button" class="btn btn-outline" id="showPaymentProofBtn"><i class="fas fa-image"></i> إثات الدفع</button>':''}
         <button class="btn btn-primary" onclick="printElement('invRcpPrint')"><i class="fas fa-print"></i> طباعة</button>
         ${s.status !== 'ملغاة' ? `<button class="btn btn-ghost" style="color:var(--err)" id="voidFromViewBtn"><i class="fas fa-ban"></i> إلغاء</button>` : ''}
         <button class="btn btn-ghost" onclick="Modal.close()">إغلاق</button>`,
@@ -279,6 +280,11 @@ const InvoicesPage = (() => {
       const item=s.items.find(i=>i.productId===product.id);
       return {product,title:product.name,detail:item?`موجود بالفاتورة · الكمية الأصلية: ${item.qty}`:'الصنف غير موجود في هذه الفاتورة',disabled:!item,warning:'الفحص لا يُنفّذ مرتجعًا ولا يعدّل الفاتورة.'};
     },acceptLabel:'تمت المراجعة',onAccept:async()=>{}}));
+    document.getElementById('showPaymentProofBtn')?.addEventListener('click',async()=>{
+      const host=document.getElementById('invoicePaymentProof');if(!host)return;
+      host.hidden=false;host.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> جارٍ تحميل إثات الدفع...';
+      try{const image=await DB.getSalePaymentProof(s.id);host.innerHTML=image?`<strong>إثات الدفع</strong><img src="${image}" alt="إثات الدفع للفاتورة ${_esc(s.invoiceNum)}">`:'لا توجد صورة محفوظة';}catch(error){host.textContent=error.message;}
+    });
     document.getElementById('voidFromViewBtn')?.addEventListener('click', () => {
       Modal.close();
       _confirmVoid(s.id, s.invoiceNum);

@@ -197,7 +197,8 @@ def register_routes(app):
                     return jsonify(ok=False,error='المسودة تغيرت في نافذة أخرى. أعد فتح نقطة البيع قبل المتابعة'),409
                 con.execute('INSERT INTO pos_drafts VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET payload=excluded.payload,version=excluded.version,updated_at=excluded.updated_at',
                             (g.user_id,draft_id,version+1,raw,datetime.now().isoformat()))
-                api._audit(con,g.user_id,'SAVE_POS_DRAFT','pos_draft',draft_id,f'{len(items)} أصناف؛ بدون خصم مخزون')
+                # الحفظ التلقائي للمسودة يحدث كثيراً، لذلك لا يُسجل كسجل رقابي.
+                # المسودة نفسها محفوظة في pos_drafts ويمكن استكمالها دون تضخيم audit_log.
                 con.commit()
                 return jsonify(ok=True,data={'id':draft_id,'version':version+1})
             except (ValueError,TypeError,AttributeError) as exc:

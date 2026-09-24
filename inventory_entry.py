@@ -75,7 +75,11 @@ def register_routes(app):
                 con.execute('UPDATE suppliers SET total_orders=total_orders+1,last_order=? WHERE id=?',(invoice_date,supplier['id']))
             item=d.get('item') or {}; product_id=item.get('product_id')
             qty=number(item.get('quantity'),0.001); cost=number(item.get('cost')); price=number(item.get('price'))
-            copies=number(item.get('copies',1),0)
+            copies=number(item.get('copies',0),0)
+            wholesale_raw=item.get('wholesale_price')
+            wholesale_price=None if wholesale_raw in (None,'') else number(wholesale_raw)
+            wholesale_min_qty=number(item.get('wholesale_min_qty',1),1)
+            if not wholesale_min_qty.is_integer(): raise ValueError('أقل كمية للجملة يجب أن تكون عددًا صحيحًا')
             if not copies.is_integer() or copies>200: raise ValueError('عدد الملصقات من صفر إلى 200')
             if product_id:
                 product=con.execute('SELECT * FROM products WHERE id=? AND is_active=1',(product_id,)).fetchone()
@@ -89,11 +93,8 @@ def register_routes(app):
                 factor=number(item.get('factor',1),0.001)
                 if unit not in ('متر','كيلو','لتر') and not factor.is_integer(): raise ValueError('معامل تحويل القطع يجب أن يكون صحيحاً')
                 product_id=api._new_id('PR')
-                barcode='29'+''.join(str(secrets.randbelow(10)) for _ in range(10))
-                while api._barcode_conflict(con,{'shop_barcode':barcode}):
-                    barcode='29'+''.join(str(secrets.randbelow(10)) for _ in range(10))
-                con.execute('INSERT INTO products(id,name,category,price,cost,stock,unit,sale_unit,purchase_unit,conversion_factor,shop_barcode,barcode,supplier_id) VALUES(?,?,?,?,?,0,?,?,?,?,?,?,(SELECT supplier_id FROM purchases WHERE id=?))',
-                    (product_id,name,category,price,cost/factor,unit,unit,purchase_unit,factor,barcode,barcode,pid))
+                con.execute('INSERT INTO products(id,name,category,price,cost,stock,unit,sale_unit,purchase_unit,conversion_factor,wholesale_price,wholesale_min_qty,supplier_id) VALUES(?,?,?,?,?,0,?,?,?,?,?,?,(SELECT supplier_id FROM purchases WHERE id=?))',
+                    (product_id,name,category,price,cost/factor,unit,unit,purchase_unit,factor,wholesale_price,int(wholesale_min_qty),pid))
                 product=con.execute('SELECT * FROM products WHERE id=?',(product_id,)).fetchone()
             if not qty.is_integer() and product['purchase_unit'] not in ('متر','كيلو','لتر'): raise ValueError('عدد العبوات يجب أن يكون صحيحاً')
             stock_qty=round(qty*factor,6)
@@ -107,12 +108,8 @@ def register_routes(app):
             old=max(0,float(product['stock'] or 0))
             average=round((old*float(product['cost'] or 0)+qty*cost)/(old+stock_qty),6)
             barcode=product['shop_barcode'] or product['barcode']
-            if not barcode:
-                barcode='29'+''.join(str(secrets.randbelow(10)) for _ in range(10))
-                while api._barcode_conflict(con,{'shop_barcode':barcode}):
-                    barcode='29'+''.join(str(secrets.randbelow(10)) for _ in range(10))
-                con.execute('UPDATE products SET shop_barcode=? WHERE id=?',(barcode,product_id))
-            con.execute('UPDATE products SET cost=?,price=? WHERE id=?',(average,price,product_id))
+            con.execute('UPDATE products SET cost=?,price=?,wholesale_price=?,wholesale_min_qty=? WHERE id=?',
+                (average,price,wholesale_price,int(wholesale_min_qty),product_id))
             con.execute('INSERT INTO purchase_items(purchase_id,product_id,product_name,qty_ordered,qty_received,unit_cost,total_cost,purchase_unit,sale_unit,conversion_factor) VALUES(?,?,?,?,?,?,?,?,?,?)',
                 (pid,product_id,product['name'],qty,qty,cost,qty*cost,product['purchase_unit'],product['sale_unit'],factor))
             con.execute('UPDATE purchases SET total_cost=total_cost+?,received_at=? WHERE id=?',(qty*cost,now,pid))

@@ -7,6 +7,7 @@
 const SettingsPage = (() => {
 
   const NAV = [
+    { id: 'guide',      label: 'دليل استخدام النظام', group: 'المساعدة', icon: 'fa-book-open', keywords: 'شرح مساعدة مرجع دليل أيقونات أزرار استخدام' },
     { id: 'general',    label: 'بيانات المحل',     group: 'الهوية والمحل', icon: 'fa-store', keywords: 'المحل الاسم الهاتف العنوان العملة بيانات' },
     { id: 'appearance', label: 'الهوية والمظهر',      group: 'الهوية والمحل', icon: 'fa-image', keywords: 'الشعار الاسم الوضع الداكن الفاتح الثيم الألوان' },
     { id: 'inventory',  label: 'المخزون والتنبيهات',   group: 'التشغيل اليومي', icon: 'fa-boxes-stacked', keywords: 'الكمية الحد الأدنى تنبيه مخزون صنف' },
@@ -17,6 +18,21 @@ const SettingsPage = (() => {
     { id: 'backup',     label: 'النسخ والاستعادة',    group: 'صيانة النظام', icon: 'fa-database', keywords: 'قاعدة البيانات استرجاع حفظ نسخة احتياطية', adminOnly: true },
     { id: 'network',    label: 'الشبكة وتتبع الشحنات', group: 'صيانة النظام', icon: 'fa-network-wired', keywords: 'شبكة تتبع رابط عام شحنة باركود خارجي', adminOnly: true },
     { id: 'health',     label: 'فحص سلامة البيانات',   group: 'صيانة النظام', icon: 'fa-heart-pulse', keywords: 'فحص تشخيص تضارب مخزون تشغيلات سلامة صحة قاعدة بيانات', adminOnly: true },
+  ];
+
+  const USER_GUIDE = [
+    {title:'لوحة التحكم',icon:'fa-chart-pie',summary:'ملخص حركة المحل والتنبيهات.',steps:['تعرض المبيعات والفواتير والديون والمخزون المنخفض.','غيّر الفترة لمراجعة اليوم أو الأسبوع أو الشهر.','اضغط على التنبيه للانتقال إلى القسم المرتبط.']},
+    {title:'الأصناف والمخزون',icon:'fa-boxes-stacked',summary:'إضافة المنتجات والأسعار والباركود.',steps:['زر + يضيف صنفًا جديدًا؛ الباركود اختياري.','أدخل سعر القطاعي وسعر الجملة وأقل كمية للجملة.','القلم للتعديل، العين للتفاصيل، سلة المهملات للحذف/الأرشفة، والساعة لحركة الصنف.']},
+    {title:'نقطة البيع',icon:'fa-cash-register',summary:'إصدار فاتورة واختيار العميل وطريقة الدفع.',steps:['ابحث عن الصنف أو امسح الباركود، ثم أضفه للسلة.','ابح عن العميل أو أضف اسمًا جديدًا، وحدد سعر قطاعي/جملة.','فعّل أو أوقف العروض، وأدخل الخصم اليدوي إن لزم.','البطاقة والتحويل يتطلبان صورة إثات دفع؛ الآجل يُسجل مديونية.']},
+    {title:'الفواتير',icon:'fa-file-invoice-dollar',summary:'مراجعة وطباعة وإلغاء فواتير البيع.',steps:['العين تفتح الفاتورة، والطابعة تطبعها.','إثات الدفع يظهر لفواتير البطاقة/التحويل.','علامة المنع تلغي الفاتورة وتعيد المخزون؛ العملية حساسة.']},
+    {title:'الصيانة والضمان',icon:'fa-screwdriver-wrench',summary:'تذاكر الإصلاح وIMEI والضمان.',steps:['سجّل العميل والجهاز والعطل عند الاستلام.','حدّث الحالة والتشخيص وقطع الغيار والأجرة.','عند التسليم يمكن إصدار فاتورة؛ وشاشة الضمان تبحث بـIMEI/Serial.']},
+    {title:'المشتريات والنواقص والجرد',icon:'fa-cart-flatbed',summary:'إدخال البضاعة ومطابقة المخزون.',steps:['أمر الشراء يحفظ الكميات المطلوبة؛ الاستلام يزيد المخزون.','فاتورة المشتريات تحفظ صورة الفاتورة، سعر القطاعي والجملة.','كشكول النواقص يجمع الأصناف المطلوبة؛ الجرد يسجل الفرق بين الفعلي والنظام.']},
+    {title:'الشحن والتوزيع',icon:'fa-truck-fast',summary:'الرحلات والسائقون وحالة التسليم.',steps:['أنشئ رحلة واختر السائق والسيارة وفواتير العملاء.','الموقع يعرض العنوان، والباركود يحدد الشحنة، وعلامة الصح تسجل التسليم.','التحصيل عند التسليم يُسجل على الشحنة.']},
+    {title:'العروض والخصومات',icon:'fa-tags',summary:'أسعار مؤقتة تعمل بكمية وفترة.',steps:['حدد الصنف، نسبة/مبلغ الخصم، أقل كمية، وفترة السريان.','يظهر العرض في نقطة البيع؛ ويمكن تشغيله أو إيقافه لكل فاتورة.','عند تعدد الأسعار يُستخدم السعر الأقل المنطبق.']},
+    {title:'الحسابات وديون العملاء',icon:'fa-wallet',summary:'حركة الأموال والبيع الآجل.',steps:['الحسابات تسجل الدخل والمصروف والمرجع.','ديون العملاء تظهر فواتير الآجل والمدفوع والمتبقي.','زر «تسجيل دفعة» يخفض الرصيد المستحق.']},
+    {title:'العملاء والموردون',icon:'fa-users',summary:'ملفات التعامل والفواتير والأرصدة.',steps:['حدد نوع العميل: فرد/قطاعي أو جملة، وأضف سقف الائتمان عند الحاجة.','ملف العميل يعرض الفواتير والضمان وكشف الحساب.','الضغط على اسم المورد يفتح بياناته والمعاملات وفواتير الشراء والأصناف.']},
+    {title:'الموارد البشرية والتقارير',icon:'fa-chart-bar',summary:'الموظفون والرواتب وتحليل الأداء.',steps:['الموارد البشرية تحفظ الموظفين والرواتب والدفعات.','التقارير تعرض المبيعات والأرباح والمخزون وربحية العملاء.','استخدم الفلاتر والتصدير للحصول على كشوف دقيقة.']},
+    {title:'الإعدادات والأمان',icon:'fa-gear',summary:'الهوية والطباعة والمستخدمون والنسخ.',steps:['بيانات المحل والمظهر تغير الاسم والشعار والثيم.','البيع والفواتير يضبط الضريبة والخصم وطريقة الدفع، والأجهزة تضبط الطابعة والباركود.','المدير يدير الصلاحيات وسجل النشاط والنسخ الاحتياطي وفحص البيانات.']},
   ];
 
   const ROLES = [
@@ -167,15 +183,17 @@ const SettingsPage = (() => {
     if (!p) return;
     const v = { ..._vals, ...draft };
     const name = _esc(v.shopName) || 'تك ماركت';
+    const devices = DeviceSettings.get();
     const previews = {
       general: `<div class="sp-label">معاينة الهوية</div><div class="sp-shop"><span class="sp-logo">${v.shopLogo?`<img src="${v.shopLogo}" alt=""/>`:'<i class="fas fa-store"></i>'}</span><strong>${name}</strong><small>${_esc(v.shopPhone)||'رقم الهاتف غير مسجل'}</small><p>${_esc(v.shopAddr)||'أضف عنوان المحل ليظهر في الفواتير'}</p></div>`,
       appearance: `<div class="sp-label">مظهر النظام</div><div class="sp-screen"><div class="sp-screen-bar"><i class="fas fa-mobile-screen-button"></i><span>${name}</span></div><div class="sp-screen-body"><b>لوحة التحكم</b><span></span><span></span><span></span></div></div><p class="sp-note"><i class="fas fa-eye"></i> الهوية تظهر في تسجيل الدخول والفواتير.</p>`,
       inventory: `<div class="sp-label">مثال تنبيه</div><div class="sp-alert warn"><i class="fas fa-box-open"></i><div><strong>مخزون منخفض</strong><small>سيظهر التنبيه عند ${_esc(v.lowStockDefault)||10} وحدات</small></div></div><div class="sp-alert"><i class="fas fa-hourglass-half"></i><div><strong>جهاز راكد</strong><small>أجهزة IMEI بالمخزون أكثر من 90 يومًا</small></div></div>`,
       invoice: `<div class="sp-label">معاينة الفاتورة</div><div class="sp-receipt"><div class="sp-r-head"><strong>${name}</strong><small>فاتورة بيع تجريبية</small></div><div class="sp-r-row"><span>صنف تجريبي</span><b>100.00</b></div>${v.showTax!=='0'&&Number(v.taxRate)>0?`<div class="sp-r-row"><span>الضريبة ${_esc(v.taxRate)}%</span><b>${Number(v.taxRate).toFixed(2)}</b></div>`:''}<div class="sp-r-total"><span>الإجمالي</span><b>${(100+(v.showTax!=='0'&&Number(v.taxRate)>0?Number(v.taxRate):0)).toFixed(2)} ${_esc(v.currency)||'ر.س'}</b></div><p>${_esc(v.invoiceNote)||'شكرًا لتعاملكم معنا'}</p></div>`,
-      devices: `<div class="sp-label">حالة الأجهزة</div><div class="sp-device"><i class="fas fa-print"></i><div><strong>الطابعة الحرارية</strong><small>جاهزة لإعداد الورق والطباعة</small></div><span class="sp-dot"></span></div><div class="sp-device"><i class="fas fa-barcode"></i><div><strong>قارئ الباركود</strong><small>يعمل كمدخل سريع في نقطة البيع</small></div><span class="sp-dot"></span></div><div class="sp-device"><i class="fas fa-camera"></i><div><strong>كاميرا الجهاز</strong><small>تعمل عند منح الإذن</small></div><span class="sp-dot idle"></span></div>`,
+      devices: `<div class="sp-label">حالة الأجهزة</div><div class="sp-device"><i class="fas fa-print"></i><div><strong>الطابعة الحرارية</strong><small>${devices.receiptPrinter?'مفعّلة وجاهزة للطباعة':'موقوفة من مركز الأجهزة'}</small></div><span class="sp-dot ${devices.receiptPrinter?'':'idle'}"></span></div><div class="sp-device"><i class="fas fa-barcode"></i><div><strong>قارئ الباركود</strong><small>${devices.barcodeScan?'مفعّل في نقطة البيع':'موقوف'}</small></div><span class="sp-dot ${devices.barcodeScan?'':'idle'}"></span></div><div class="sp-device"><i class="fas fa-camera"></i><div><strong>كاميرا الجهاز</strong><small>${devices.cameraEnabled?'مفعّلة؛ تعمل عند منح الإذن':'موقوفة'}</small></div><span class="sp-dot ${devices.cameraEnabled?'':'idle'}"></span></div>`,
       users: `<div class="sp-label">الأمان والصلاحيات</div><div class="sp-security"><i class="fas fa-shield-halved"></i><strong>وصول محمي حسب الدور</strong><p>إدارة الحسابات وكلمات المرور وصلاحيات التشغيل الحساسة.</p></div>`,
       backup: `<div class="sp-label">سلامة البيانات</div><div class="sp-security"><i class="fas fa-database"></i><strong>نسخ SQLite متسقة</strong><p>احتفظ بنسخة حديثة قبل أي استعادة أو تغيير كبير.</p></div>`,
       activity: `<div class="sp-label">المراقبة</div><div class="sp-security"><i class="fas fa-clock-rotate-left"></i><strong>كل عملية قابلة للتتبع</strong><p>راجع المستخدم والوقت ونوع التغيير من سجل النشاط.</p></div>`
+      ,guide: `<div class="sp-label">مرجع النظام</div><div class="sp-security"><i class="fas fa-book-open"></i><strong>الشرح دائمًا متاح</strong><p>ابح عن اسم الشاشة أو الزر وافتح القسم لمعرفة خطوات العمل.</p></div><div class="sp-alert"><i class="fas fa-magnifying-glass"></i><div><strong>${USER_GUIDE.length} قسمًا مشروحًا</strong><small>مع معجم للأيقونات الشائعة</small></div></div>`
     };
     p.innerHTML = `<div class="sp-head"><span>معاينة مباشرة</span><i class="fas fa-wand-magic-sparkles"></i></div><div class="sp-body">${previews[tab] || previews.general}</div><div class="sp-foot"><i class="fas fa-circle-info"></i> تتحدث المعاينة مع تغييراتك قبل الحفظ</div>`;
   }
@@ -196,6 +214,23 @@ const SettingsPage = (() => {
     if (!content) return;
     CameraStudio.close();
     _renderPreview(tab);
+
+    if (tab === 'guide') {
+      const iconLegend = [
+        ['fa-plus','إضافة سجل جديد'],['fa-eye','عرض التفاصيل'],['fa-pen','تعديل'],['fa-trash','حذف أو أرشفة'],
+        ['fa-floppy-disk','حفظ'],['fa-print','طباعة'],['fa-download','تصدير'],['fa-magnifying-glass','بحث'],['fa-camera','تصوير/مسح'],
+        ['fa-barcode','باركود'],['fa-clock-rotate-left','سجل الحركة'],['fa-ban','إلغاء'],['fa-circle-check','تأكيد/مكتمل'],['fa-triangle-exclamation','تنبيه'],
+        ['fa-file-invoice','فاتورة'],['fa-coins','مبلغ/تحصيل'],['fa-location-dot','موقع أو عنوان'],['fa-xmark','إغلاق أو مسح الاختيار']
+      ];
+      content.innerHTML = `
+        <div class="guide-hero"><div><span class="settings-kicker">المرجع الشامل</span><h2>دليل استخدام تك ماركت</h2><p>اكتب اسم الشاشة أو الزر الذي تريد معرفته، ثم افتح القسم.</p></div><i class="fas fa-book-open-reader"></i></div>
+        <div class="guide-search"><i class="fas fa-magnifying-glass"></i><input class="form-control" id="guideSearch" type="search" placeholder="ابح: فاتورة، باركود، عميل، جرد..."><button class="btn btn-ghost btn-sm" id="guideExpandAll"><i class="fas fa-angles-down"></i> فتح الكل</button></div>
+        <div class="guide-sections" id="guideSections">${USER_GUIDE.map((g,index)=>`<details class="guide-section" data-guide-text="${_esc(`${g.title} ${g.summary} ${g.steps.join(' ')}`)}" ${index===0?'open':''}><summary><span class="guide-section-icon"><i class="fas ${g.icon}"></i></span><span><strong>${_esc(g.title)}</strong><small>${_esc(g.summary)}</small></span><i class="fas fa-chevron-down"></i></summary><ol>${g.steps.map(step=>`<li>${_esc(step)}</li>`).join('')}</ol></details>`).join('')}</div>
+        <div class="card guide-icons-card"><div class="card-head"><h3 class="card-title"><i class="fas fa-icons"></i> معجم الأيقونات والأزرار</h3></div><div class="card-body"><div class="guide-icon-grid">${iconLegend.map(([icon,label])=>`<div><i class="fas ${icon}"></i><span>${label}</span></div>`).join('')}</div><p class="form-hint"><i class="fas fa-circle-info"></i> قد تختفي بعض الأزرار حسب صلاحيات حسابك.</p></div></div>`;
+      const guideSearch=document.getElementById('guideSearch');
+      guideSearch?.addEventListener('input',()=>{const q=normalizeArabicText(guideSearch.value.trim());document.querySelectorAll('.guide-section').forEach(section=>{const match=!q||normalizeArabicText(section.dataset.guideText).includes(q);section.hidden=!match;if(q&&match)section.open=true;});});
+      document.getElementById('guideExpandAll')?.addEventListener('click',()=>{const sections=[...document.querySelectorAll('.guide-section:not([hidden])')];const openAll=sections.some(section=>!section.open);sections.forEach(section=>section.open=openAll);});
+    }
 
     if (tab === 'general') {
       content.innerHTML = `
@@ -388,12 +423,19 @@ const SettingsPage = (() => {
       content.innerHTML = `
         <div class="settings-section-head"><div><h2>النسخ الاحتياطي والاستعادة</h2><p>احمِ بيانات المبيعات والمخزون والمستخدمين من الفقد.</p></div><button class="btn btn-primary" id="createBackupBtn"><i class="fas fa-plus"></i> إنشاء نسخة الآن</button></div>
         <div class="settings-callout safe"><i class="fas fa-shield-halved"></i><div><strong>النسخ تحفظ محليًا</strong><span>يتم إنشاء لقطة سليمة من SQLite دون إيقاف العمل، ويُحتفظ بآخر 5 نسخ فقط تلقائيًا.</span></div></div>
+        <div class="backup-emergency-guide"><div><i class="fas fa-life-ring"></i><span><strong>خطة الطوارئ لو المشروع وقع</strong><small>1) احتفظ بملف .db على فلاشة/قرص آخر. 2) ثبّت نسخة جديدة من المشروع. 3) افتح هذه الشاشة واضغط استيراد. 4) بعد الفحص اضغط استعادة وأعد تشغيل البرنامج.</small></span></div></div>
         <div class="card"><div class="card-head"><span class="card-title">نسخة إضافية خارج المشروع</span></div><div class="card-body">
           <p>اختر مجلدًا على قرص خارجي أو جهاز آخر. مجلد آخر على نفس القرص لا يحمي من تلف القرص.</p>
           <label for="secondaryBackupDir">المسار الكامل للمجلد</label><input id="secondaryBackupDir" class="form-control" dir="ltr" value="${_esc(secondary.directory||'')}" placeholder="E:\\ShopBackups">
           <p role="status">الحالة: ${({ok:'آخر نسخة إضافية سليمة',failed:'فشل آخر نسخ إضافي',stale:'لم تُنشأ نسخة إضافية حديثة',not_configured:'لم يُحدد مكان'})[secondary.state]} ${secondary.last_success?'· '+_esc(new Date(secondary.last_success).toLocaleString('ar-EG')):''}</p>
           <p>${_esc(secondary.error||'')}</p><button class="btn btn-primary" id="saveSecondaryBackup">حفظ المكان</button>
           <small>اترك المسار فارغًا لإيقاف النسخة الإضافية. الحفظ لا ينقل بيانات؛ استخدم إنشاء نسخة الآن للاختبار.</small>
+        </div></div>
+        <div class="card"><div class="card-head"><span class="card-title"><i class="fas fa-file-import"></i> نقل الداتا إلى نسخة أخرى من المشروع</span></div><div class="card-body">
+          <p>اختر ملف <strong>.db</strong> من القرص الخارجي. سيفحص النظام سلامة SQLite وجداول المشروع قبل إضافته لقائمة النسخ.</p>
+          <input type="file" id="importBackupFile" accept=".db,application/vnd.sqlite3,application/octet-stream" hidden>
+          <button class="btn btn-outline" id="importBackupBtn"><i class="fas fa-upload"></i> استيراد نسخة من جهاز آخر</button>
+          <p class="form-hint"><i class="fas fa-triangle-exclamation"></i> الاستيراد لا يغيّر الداتا مباشرة؛ بعده ستراجع الملف في القائمة ثم تضغط «استعادة» بنفسك.</p>
         </div></div>
         <div class="card"><div class="card-head"><span class="card-title"><i class="fas fa-clock-rotate-left"></i> النسخ المتاحة</span><span class="badge bdg-slate">${backups.length}</span></div><div class="card-body p0">
           ${backups.length ? `<div class="backup-list">${backups.map((b,i)=>`<div class="backup-row"><span class="backup-icon"><i class="fas fa-database"></i></span><div class="backup-meta"><strong>${_esc(b.filename)}</strong><small>${new Date(b.modified).toLocaleString('ar-EG')} · ${b.size_kb} KB</small></div>${i===0?'<span class="badge bdg-ok">الأحدث</span>':''}<button class="btn btn-ghost btn-sm restore-backup" data-path="${_esc(b.path)}"><i class="fas fa-clock-rotate-left"></i> استعادة</button></div>`).join('')}</div>` : '<div class="empty-state"><div class="es-icon"><i class="fas fa-database"></i></div><h3 class="es-title">لا توجد نسخ بعد</h3><p class="es-sub">أنشئ أول نسخة احتياطية قبل إدخال بيانات التشغيل الفعلية.</p></div>'}
@@ -402,6 +444,9 @@ const SettingsPage = (() => {
         const button=event.currentTarget;button.disabled=true;
         try{await _api('secondary_backup',{body:{directory:document.getElementById('secondaryBackupDir').value.trim()}});Toast.ok('تم حفظ المكان','أنشئ نسخة الآن للتأكد من الوصول وسلامة النسخة');await _renderBackupTab(content);}catch(error){Toast.err('تعذر حفظ المكان',error.message);button.disabled=false;}
       };
+      const importInput=document.getElementById('importBackupFile');
+      document.getElementById('importBackupBtn')?.addEventListener('click',()=>importInput?.click());
+      importInput?.addEventListener('change',async()=>{const file=importInput.files?.[0];if(!file)return;const button=document.getElementById('importBackupBtn');button.disabled=true;button.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> جارٍ الفحص والاستيراد';try{const form=new FormData();form.append('file',file);const response=await fetch('/api/import_backup',{method:'POST',body:form,credentials:'same-origin'});const payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||'فشل الاستيراد');Toast.ok('تم فحص النسخة واستيرادها','ظهرت في القائمة؛ اضغط استعادة لتطبيقها');await _renderBackupTab(content);}catch(error){Toast.err('رُفضت النسخة',error.message);button.disabled=false;button.innerHTML='<i class="fas fa-upload"></i> استيراد نسخة من جهاز آخر';}finally{importInput.value='';}});
       document.getElementById('createBackupBtn')?.addEventListener('click', async e => {
         const btn=e.currentTarget; btn.disabled=true; btn.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> جارٍ الإنشاء';
         try { const result=await DB.backupDatabase(); if(result.secondary_error)Toast.warn('المحلية محفوظة؛ الإضافية فشلت',result.secondary_error);else if(result.retention_warning)Toast.warn('تم إنشاء النسخة مع تنبيه',result.retention_warning);else Toast.ok('تم إنشاء النسخة', result.secondary_path?'تم التحقق من النسختين والاحتفاظ بآخر 5 نسخ':result.filename || 'تم حفظ قاعدة البيانات'); _renderBackupTab(content); }
@@ -491,15 +536,20 @@ const SettingsPage = (() => {
       const res = await DB.getHealthCheck();
       const overallStyle = res.overall === 'critical' ? { color: 'var(--err)', text: 'توجد مشاكل حرجة تحتاج مراجعة' }
         : res.overall === 'warning' ? { color: 'var(--warn)', text: 'توجد ملاحظات تستحق المراجعة' }
-        : { color: 'var(--ok)', text: 'لا توجد مشاكل — البيانات سليمة' };
+        : res.overall === 'incomplete' ? { color: 'var(--warn)', text: 'الفحص غير مكتمل — توجد أجزاء غير مُهيأة أو لم تُختبر' }
+        : { color: 'var(--ok)', text: 'الفحوصات الداخلية التي تم تنفيذها نجحت' };
 
       const problemChecks = res.checks.filter(c => c.count > 0);
       const cleanChecks = res.checks.filter(c => c.count === 0);
+      const diagnostics=res.diagnostics||[];
+      const diagStyle={ok:{icon:'fa-circle-check',color:'var(--ok)',label:'تم فحصه'},warning:{icon:'fa-triangle-exclamation',color:'var(--warn)',label:'يحتاج انتباه'},error:{icon:'fa-circle-xmark',color:'var(--err)',label:'فشل الفحص'},not_configured:{icon:'fa-plug-circle-xmark',color:'var(--tx-3)',label:'غير مُهيأ'},not_tested:{icon:'fa-circle-question',color:'var(--tx-3)',label:'لم يُختبر'}};
 
       content.innerHTML = `
-        <div class="settings-section-head"><div><h2>فحص سلامة البيانات</h2><p>فحص تشخيصي للقراءة فقط — لا يعدّل أي بيانات. شغّله بين وقت وآخر للاطمئنان.</p></div>
+        <div class="settings-section-head"><div><h2>تشخيص النظام والبيانات</h2><p>يعرض فقط ما تم فحصه فعلياً، ويميّز بوضوح بين السليم وغير المُهيأ وغير القابل للاختبار آلياً.</p></div>
           <button class="btn btn-primary" id="rerunHealthBtn"><i class="fas fa-rotate"></i> إعادة الفحص</button>
         </div>
+
+        <div class="alert warn" style="margin-bottom:1rem"><i class="fas fa-circle-info"></i><div><strong>هذه النتيجة لا تعني أن الطابعة أو الكاميرا أو قارئ الباركود يعمل.</strong><br><small>الأجهزة الخارجية لا تُعتبر سليمة إلا بعد توصيلها وتشغيل اختبارها من شاشة الأجهزة.</small></div></div>
 
         <div class="card" style="margin-bottom:1rem">
           <div class="card-body" style="text-align:center;padding:1.5rem">
@@ -507,6 +557,10 @@ const SettingsPage = (() => {
             <div style="font-size:.78rem;color:var(--tx-3);margin-top:.3rem">آخر فحص: ${Fmt.dateShort ? Fmt.dateShort(res.checked_at) : res.checked_at}</div>
           </div>
         </div>
+
+        <div class="card" style="margin-bottom:1rem"><div class="card-head"><h3 class="card-title"><i class="fas fa-stethoscope"></i> ما تم فحصه فعلياً</h3></div><div class="card-body">
+          ${diagnostics.map(d=>{const st=diagStyle[d.status]||diagStyle.not_tested;return `<div style="display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:.65rem;align-items:center;padding:.65rem 0;border-bottom:1px solid var(--border-2)"><i class="fas ${st.icon}" style="color:${st.color}"></i><div><strong style="display:block;font-size:.86rem">${_esc(d.title)}</strong><small style="color:var(--tx-3)">${_esc(d.details)}</small></div><span class="badge bdg-slate" style="color:${st.color}">${st.label}</span></div>`}).join('')}
+        </div></div>
 
         ${problemChecks.map(c => {
           const st = SEVERITY_STYLE[c.severity] || SEVERITY_STYLE.info;
@@ -539,11 +593,24 @@ const SettingsPage = (() => {
   async function _renderActivityTab(content) {
     content.innerHTML = `<div class="card"><div class="card-body"><div class="empty-state"><div class="es-icon an-spin"><i class="fas fa-circle-notch"></i></div><h3 class="es-title">جارٍ تحميل سجل النشاط...</h3></div></div></div>`;
     try {
-      const result=await DB.getAuditLog(150,0), items=result.items||[];
-      const actionLabel={ADD:'إضافة',UPDATE:'تعديل',DELETE:'حذف',ARCHIVE:'أرشفة',VOID:'إلغاء',RESTORE:'استعادة'};
-      const entityLabel={product:'صنف',customer:'عميل',repair:'صيانة',serial_unit:'جهاز',supplier:'مورد',sale:'فاتورة',user:'مستخدم'};
-      content.innerHTML=`<div class="settings-section-head"><div><h2>سجل نشاط النظام</h2><p>تتبع العمليات الحساسة ومن نفذها ووقت تنفيذها.</p></div><span class="badge bdg-slate">${result.total||items.length} عملية</span></div>
-        <div class="card"><div class="card-body p0">${items.length?`<div class="audit-list">${items.map(x=>`<div class="audit-row"><span class="audit-dot ${String(x.action).toLowerCase()}"></span><div class="audit-main"><strong>${actionLabel[x.action]||x.action} ${entityLabel[x.entity]||x.entity}</strong><small>${_esc(x.details||x.entity_id||'')}</small></div><div class="audit-who"><strong>${_esc(x.user_id||'system')}</strong><small>${new Date(x.timestamp).toLocaleString('ar-EG')}</small></div></div>`).join('')}</div>`:'<div class="empty-state"><div class="es-icon"><i class="fas fa-clock-rotate-left"></i></div><h3 class="es-title">لا يوجد نشاط مسجل</h3></div>'}</div></div>`;
+      const result=await DB.getAuditLog(500,0), items=result.items||[];
+      const actionLabel={ADD:'إضافة',UPDATE:'تعديل',DELETE:'حذف',ARCHIVE:'أرشفة',VOID:'إلغاء',RESTORE:'استعادة نسخة',BACKUP:'إنشاء نسخة',IMPORT_BACKUP:'استيراد نسخة',CONFIGURE_BACKUP:'تعديل مسار النسخ',ADD_SALE:'إصدار فاتورة',ADD_DEBT:'تسجيل مديونية',PAY_DEBT:'سداد مديونية',VOID_SALE:'إلغاء فاتورة',ADD_SERIALS:'إضافة أجهزة',UPDATE_SERIAL:'تعديل جهاز',STOCKTAKE_ADJUST:'تسوية مخزون',LOGIN:'دخول',LOGOUT:'خروج',CHANGE_PASSWORD:'تغيير كلمة مرور',RESET_PASSWORD:'إعادة ضبط كلمة مرور',ADD_USER:'إضافة مستخدم',UPDATE_USER:'تعديل مستخدم',DELETE_USER:'حذف مستخدم',RECEIVE:'استلام',CANCEL:'إلغاء',UPDATE_SETTING:'تعديل إعداد'};
+      const entityLabel={product:'صنف',customer:'عميل',repair:'صيانة',serial_unit:'جهاز',supplier:'مورد',sale:'فاتورة',user:'مستخدم',debt:'مديونية',purchase:'مشتريات',database:'قاعدة البيانات',setting:'إعداد',account:'حساب',transaction:'معاملة مالية',cash_session:'وردية خزينة',promotion:'عرض',delivery_trip:'رحلة توزيع',delivery_stop:'تسليم'};
+      const category=x=>x.entity==='user'?'security':x.entity==='database'?'backup':['sale','debt','account','transaction','cash_session'].includes(x.entity)?'money':['product','serial_unit','purchase'].includes(x.entity)?'stock':'other';
+      const categoryLabel={all:'الكل',money:'المبيعات والمال',stock:'المخزون والمشتريات',security:'الأمان والمستخدمون',backup:'النسخ والاستعادة',other:'أخرى'};
+      const render=()=>{
+        const q=(document.getElementById('auditSearch')?.value||'').trim().toLowerCase(), cat=document.getElementById('auditCategory')?.value||'all';
+        const shown=items.filter(x=>(cat==='all'||category(x)===cat)&&(!q||[x.action,x.entity,x.details,x.entity_id,x.full_name,x.user_id].some(v=>String(v||'').toLowerCase().includes(q))));
+        const host=document.getElementById('auditRows');if(!host)return;
+        host.innerHTML=shown.length?`<div class="audit-list">${shown.map(x=>`<div class="audit-row"><span class="audit-dot ${String(x.action).toLowerCase()}"></span><div class="audit-main"><strong>${_esc(actionLabel[x.action]||x.action)} — ${_esc(entityLabel[x.entity]||x.entity)}</strong><small>${_esc(x.details||x.entity_id||'بدون تفاصيل')}</small></div><div class="audit-who"><strong>${_esc(x.full_name||x.user_id||'النظام')}</strong><small>${new Date(x.timestamp).toLocaleString('ar-EG')}</small></div></div>`).join('')}</div>`:'<div class="empty-state"><div class="es-icon"><i class="fas fa-filter-circle-xmark"></i></div><h3 class="es-title">لا توجد نتائج مطابقة</h3></div>';
+        document.getElementById('auditShown').textContent=`${shown.length} ظاهرة`;
+      };
+      content.innerHTML=`<div class="settings-section-head"><div><h2>سجل الرقابة الفعلي</h2><p>يعرض التغييرات المهمة فقط؛ الحفظ التلقائي للمسودات لا يُسجل هنا.</p></div><span class="badge bdg-slate">${result.total||items.length} عملية مهمة</span></div>
+        <div class="card" style="margin-bottom:1rem"><div class="card-body"><div class="form-row"><label>بحث في التفاصيل أو المستخدم<input id="auditSearch" class="form-control" placeholder="فاتورة، اسم مستخدم، صنف..."></label><label>نوع النشاط<select id="auditCategory" class="form-control">${Object.entries(categoryLabel).map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label><label>النتائج<span id="auditShown" class="form-control" style="display:flex;align-items:center">0 ظاهرة</span></label></div></div></div>
+        <div class="card"><div class="card-body p0" id="auditRows"></div></div>`;
+      document.getElementById('auditSearch').addEventListener('input',render);
+      document.getElementById('auditCategory').addEventListener('change',render);
+      render();
     } catch(e){content.innerHTML=`<div class="alert err"><i class="fas fa-circle-xmark"></i> ${_esc(e.message)}</div>`;}
   }
 
@@ -553,6 +620,11 @@ const SettingsPage = (() => {
   function _renderDevicesTab(content) {
     const dv = DeviceSettings.get();
     content.innerHTML = `
+      <div class="settings-section-head"><div><h2>مركز الطباعة والأجهزة</h2><p>شغّل أو أوقف كل جهاز على هذه المحطة. الإعدادات محلية لهذا الجهاز فقط.</p></div></div>
+      <div class="device-control-grid">
+        ${[['receiptPrinter','fa-receipt','طابعة الفواتير','طباعة فواتير البيع وإيصالات الصيانة'],['labelPrinter','fa-tags','طابعة الملصقات','طباعة باركود وسعر الصنف'],['barcodeScan','fa-barcode','قارئ الباركود','الماسح USB أو اللاسلكي في نقطة البيع'],['cameraEnabled','fa-camera','الكاميرا','التصوير ومسح الباركود وإثات الدفع']].map(([key,icon,title,desc])=>`<label class="device-control-card ${dv[key]?'enabled':'disabled'}"><span class="device-control-icon"><i class="fas ${icon}"></i></span><span><strong>${title}</strong><small>${desc}</small><b>${dv[key]?'مفعّل':'موقوف'}</b></span><input type="checkbox" data-device-toggle="${key}" ${dv[key]?'checked':''}><em></em></label>`).join('')}
+      </div>
+
       <div class="card" style="margin-bottom:1rem">
         <div class="card-head"><h3 class="card-title"><i class="fas fa-print"></i> إعدادات الطابعة الحرارية (Receipt Printer)</h3></div>
         <div class="card-body">
@@ -564,13 +636,13 @@ const SettingsPage = (() => {
             </div>
           </div>
           <label style="display:flex;align-items:center;gap:.55rem;font-size:.83rem;color:var(--tx-2);cursor:pointer;margin-top:.6rem">
-            <input type="checkbox" id="devAutoPrint" ${dv.autoPrint?'checked':''} />
+            <input type="checkbox" id="devAutoPrint" ${dv.autoPrint?'checked':''} ${dv.receiptPrinter?'':'disabled'} />
             طباعة الفاتورة تلقائياً فور إتمام عملية البيع
           </label>
         </div>
         <div class="card-foot" style="display:flex;justify-content:flex-start;gap:.75rem">
-          <button class="btn btn-ghost btn-sm" id="devTestPrint"><i class="fas fa-receipt"></i> طباعة فاتورة تجريبية</button>
-          <button class="btn btn-ghost btn-sm" id="devTestSticker"><i class="fas fa-barcode"></i> طباعة ملصق باركود تجريبي</button>
+          <button class="btn btn-ghost btn-sm" id="devTestPrint" ${dv.receiptPrinter?'':'disabled'}><i class="fas fa-receipt"></i> طباعة فاتورة تجريبية</button>
+          <button class="btn btn-ghost btn-sm" id="devTestSticker" ${dv.labelPrinter?'':'disabled'}><i class="fas fa-barcode"></i> طباعة ملصق باركود تجريبي</button>
         </div>
       </div>
 
@@ -586,7 +658,7 @@ const SettingsPage = (() => {
           </p>
           <div class="form-group" style="margin-top:.75rem;max-width:340px">
             <label class="form-label">اختبار قارئ الباركود</label>
-            <input class="form-control" id="devBarcodeTest" placeholder="امسح بالماسح الضوئي أو اكتب واضغط Enter" dir="ltr" />
+            <input class="form-control" id="devBarcodeTest" placeholder="امسح بالماسح الضوئي أو اكتب واضغط Enter" dir="ltr" ${dv.barcodeScan?'':'disabled'} />
             <div id="devBarcodeResult" style="font-size:.8rem;margin-top:.5rem;color:var(--tx-3)"></div>
           </div>
         </div>
@@ -595,9 +667,15 @@ const SettingsPage = (() => {
       <div class="camera-launch-card">
         <span aria-hidden="true"><i class="fas fa-camera"></i></span>
         <div><h3>الكاميرا والمسح</h3><p>اختبر الجهاز والدقة هنا. التصوير وربط صور الأصناف، والمسح داخل البيع والجرد والاستلام وقراءة أرقام IMEI.</p>
-        <button class="btn btn-primary" id="cameraTestBtn">اختبار الكاميرا</button>
-        <button class="btn btn-ghost" id="cameraScanTestBtn">اختبار قراءة الباركود</button></div>
+        <button class="btn btn-primary" id="cameraTestBtn" ${dv.cameraEnabled?'':'disabled'}>اختبار الكاميرا</button>
+        <button class="btn btn-ghost" id="cameraScanTestBtn" ${dv.cameraEnabled?'':'disabled'}>اختبار قراءة الباركود</button></div>
       </div>`;
+
+    document.querySelectorAll('[data-device-toggle]').forEach(input=>input.addEventListener('change',()=>{
+      const patch={[input.dataset.deviceToggle]:input.checked};
+      if(input.dataset.deviceToggle==='receiptPrinter'&&!input.checked)patch.autoPrint=false;
+      DeviceSettings.set(patch);Toast.ok('تم حفظ حالة الجهاز',input.checked?'تم التشغيل':'تم الإيقاف');_renderDevicesTab(content);
+    }));
 
     const setPaper = w => { DeviceSettings.set({ paperWidth: w }); _renderDevicesTab(content); };
     document.getElementById('devPaper80')?.addEventListener('click', () => setPaper('80'));

@@ -1,5 +1,6 @@
 """Daily shop regressions. Never uses the shop's real database or backups."""
 import json
+import io
 import os
 import sqlite3
 import tempfile
@@ -103,6 +104,50 @@ class OperationsTests(unittest.TestCase):
         self.assertFalse(rejected['ok'],rejected)
         self.assertEqual(json.loads(service.get_product(mid))['data']['stock'],39)
 
+    def test_pos_can_quick_add_and_reuse_customer_by_name(self):
+        self.login(username='cashier',password='123456')
+        first=self.client.post('/api/add_customer',json={'name':'عميل نقطة البيع','phone':'','quick_pos':1}).json
+        self.assertTrue(first['ok'],first)
+        second=self.client.post('/api/add_customer',json={'name':'  عميل نقطة البيع  ','phone':'','quick_pos':1}).json
+        self.assertTrue(second['ok'],second)
+        self.assertEqual(first['data'],second['data'])
+        customer=self.client.get('/api/get_customer/'+first['data']).json['data']
+        self.assertEqual(customer['name'],'عميل نقطة البيع')
+        self.assertEqual(customer['phone'],'')
+
+    def test_card_sale_stores_payment_proof_outside_invoice_lists(self):
+        mid=self.product()
+        result=json.loads(api.ShopAPI().add_sale(json.dumps(self.sale(
+            mid,payment_method='بطاقة',payment_proof_image=PNG))))
+        self.assertTrue(result['ok'],result)
+        sale_id=result['data']['id']
+        listed=json.loads(api.ShopAPI().get_sales())['data']['sales']
+        sale=next(row for row in listed if row['id']==sale_id)
+        self.assertTrue(sale['has_payment_proof'])
+        self.assertNotIn('payment_proof_image',sale)
+        detail=json.loads(api.ShopAPI().get_sale(sale_id))['data']
+        self.assertTrue(detail['has_payment_proof'])
+        proof=json.loads(api.ShopAPI().get_sale_payment_proof(sale_id))['data']
+        self.assertEqual(proof,PNG)
+
+    def test_inventory_entry_saves_wholesale_price_without_forcing_barcode(self):
+        self.login()
+        with closing(api._conn()) as con:
+            con.execute("INSERT OR IGNORE INTO inventory_categories(name) VALUES('اختبار')")
+            con.commit(); category='اختبار'
+        response=self.client.post('/api/inventory_invoice_line',json={
+            'token':'wholesale-entry-test','image':PNG,'supplier_id':'S001','invoice_num':'INV-WHOLESALE',
+            'invoice_date':'2026-09-24','item':{
+                'name':'صنف جديد بدون باركود','category':category,'purchase_unit':'قطعة','sale_unit':'قطعة',
+                'factor':1,'quantity':2,'cost':80,'price':60,'wholesale_price':50,'wholesale_min_qty':3,'copies':0,
+            },
+        }).json
+        self.assertTrue(response['ok'],response)
+        product=json.loads(api.ShopAPI().get_product(response['data']['product_id']))['data']
+        self.assertIsNone(product['barcode'])
+        self.assertIsNone(product['shop_barcode'])
+        self.assertEqual((product['price'],product['wholesale_price'],product['wholesale_min_qty']),(60,50,3))
+
     def test_void_restores_stock_and_cannot_repeat(self):
         mid=self.product();service=api.ShopAPI()
         rejected=json.loads(service.add_sale(json.dumps(self.sale(mid,50))))
@@ -119,6 +164,8 @@ class OperationsTests(unittest.TestCase):
         payload={'cart':[{'productId':mid,'qty':1,'price':10,'total':10,'serials':[]}], 'discount':0}
         saved=self.client.post('/api/pos_draft',json={'id':'draft-test','version':0,'payload':payload}).json
         self.assertTrue(saved['ok'],saved)
+        with closing(api._conn()) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM audit_log WHERE action='SAVE_POS_DRAFT'").fetchone()[0],0)
         self.client.post('/api/logout',json={});self.login()
         restored=self.client.get('/api/pos_draft').json['data']
         self.assertEqual(restored['payload'],payload)
@@ -144,12 +191,26 @@ class OperationsTests(unittest.TestCase):
         self.login();mid=self.product(image_data=PNG)
         for endpoint in ('get_products','get_top_selling_products/50','search_products?q=اختبار'):
             products=self.client.get('/api/'+endpoint).json['data']
+            if isinstance(products,dict): products=products.get('products',[])
             row=next(m for m in products if m['id']==mid)
             self.assertNotIn('image_data',row);self.assertTrue(row['has_image'])
         self.assertTrue(json.loads(api.ShopAPI().update_product(mid,json.dumps({'name':'تعديل بلا صورة'})))['ok'])
         self.assertEqual(self.client.get('/api/product_image/'+mid).status_code,200)
         self.client.post('/api/logout',json={})
         self.assertEqual(self.client.get('/api/product_image/'+mid).status_code,401)
+
+    def test_health_check_reports_real_scope_and_unverified_devices(self):
+        self.login()
+        result=self.client.get('/api/get_health_check').json
+        self.assertTrue(result['ok'],result)
+        data=result['data'];diagnostics={row['key']:row for row in data['diagnostics']}
+        self.assertEqual(data['scope'],'internal_data_and_backup')
+        self.assertFalse(data['external_verified'])
+        self.assertIn(data['overall'],('warning','incomplete'))
+        self.assertEqual(diagnostics['sqlite']['status'],'ok')
+        self.assertEqual(diagnostics['foreign_keys']['status'],'ok')
+        self.assertEqual(diagnostics['external_devices']['status'],'not_tested')
+        self.assertFalse(diagnostics['external_devices']['checked'])
 
     def test_secondary_backup_is_verified_and_failure_keeps_local_copy(self):
         self.login();self.product()
@@ -211,6 +272,18 @@ class OperationsTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(restored['data']['pre_backup']))
         with closing(sqlite3.connect(restored['data']['pre_backup'])) as con:
             self.assertEqual(con.execute('PRAGMA quick_check').fetchone()[0], 'ok')
+
+    def test_external_backup_import_is_verified_before_restore_list(self):
+        self.login()
+        snapshot=backup_store.run_backup('import-test')
+        with open(snapshot['path'],'rb') as source:
+            uploaded=self.client.post('/api/import_backup',data={'file':(io.BytesIO(source.read()),'old-project.db')},content_type='multipart/form-data').json
+        self.assertTrue(uploaded['ok'],uploaded)
+        self.assertTrue(uploaded['data']['filename'].startswith('imported_'))
+        listed=self.client.get('/api/list_backups').json['data']
+        self.assertTrue(any(row['filename']==uploaded['data']['filename'] for row in listed))
+        bad=self.client.post('/api/import_backup',data={'file':(io.BytesIO(b'not sqlite'),'broken.db')},content_type='multipart/form-data').json
+        self.assertFalse(bad['ok'],bad)
 
 
 if __name__=='__main__':unittest.main()

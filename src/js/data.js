@@ -111,7 +111,8 @@ const DB = {
         warrantyMonths:+(i.warranty_months??i.warrantyMonths??0), warrantyEnd:i.warranty_end??i.warrantyEnd??''})),
       subtotal:+(s.subtotal??0), discount:+(s.discount??0), tax:+(s.tax??0), total:+(s.total??0),
       paymentMethod:s.payment_method??s.paymentMethod??'نقدي', cashier:s.cashier??'',
-      date:s.sale_date??s.date??'', time:s.sale_time??s.time??'', status:s.status??'مكتمل', source:s.source??'pos', customerAmount:+(s.customer_amount??s.total??0) };
+      date:s.sale_date??s.date??'', time:s.sale_time??s.time??'', status:s.status??'مكتمل', source:s.source??'pos', customerAmount:+(s.customer_amount??s.total??0),
+      hasPaymentProof:Boolean(s.has_payment_proof??s.hasPaymentProof) };
   },
   _normUser(u) {
     return { id:u.id, username:u.username, fullName:u.full_name??u.fullName??'',
@@ -134,7 +135,8 @@ const DB = {
   _toSnakePat(d) {
     return { name:d.name, phone:d.phone, address:d.address, notes:d.notes,
       customer_type:d.customerType||'فرد', company_name:d.companyName??'',
-      tax_num:d.taxNum??'', credit_limit:Number(d.creditLimit)||0 };
+      tax_num:d.taxNum??'', credit_limit:Number(d.creditLimit)||0,
+      quick_pos:d.quickPos?1:0 };
   },
   _toSnakeSup(d) {
     return { name:d.name, contact:d.contact, phone:d.phone, email:d.email,
@@ -270,7 +272,8 @@ const DB = {
       payment_method:data.paymentMethod??data.payment_method??'نقدي', use_loyalty:Boolean(data.useLoyalty??data.use_loyalty),
       credit_customer_name:data.creditCustomerName??data.credit_customer_name??'',
       credit_phone:data.creditPhone??data.credit_phone??'',
-      credit_paid_amount:data.creditPaidAmount??data.credit_paid_amount??0
+      credit_paid_amount:data.creditPaidAmount??data.credit_paid_amount??0,
+      payment_proof_image:data.paymentProofImage??data.payment_proof_image??null
     })});
     return _LS.addSale(data);
   },
@@ -278,6 +281,7 @@ const DB = {
     if (_IS_FLASK) return _api(`void_sale/${id}`, {body: this._withUser({})});
     return _LS.voidSale(id);
   },
+  async getSalePaymentProof(id) { return _IS_FLASK ? _api(`get_sale_payment_proof/${id}`) : null; },
 
   /* ── STATS ──────────────────────────────────────────── */
   async getStats()          { return _IS_FLASK ? _api('get_stats')           : _LS.getStats(); },

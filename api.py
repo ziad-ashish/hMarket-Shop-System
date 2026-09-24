@@ -98,6 +98,8 @@ def _verify_password(pwd: str, stored: str) -> bool:
 # ── audit log helper ──────────────────────────────────────────
 def _audit(con, user_id: str, action: str, entity: str,
            entity_id: str, details: str = ""):
+    if action in {"SAVE_POS_DRAFT", "SAVE_SCAN_DRAFT"} or entity in {"pos_draft", "scan_draft"}:
+        return
     con.execute(
         "INSERT INTO audit_log(id,user_id,action,entity,entity_id,timestamp,details) "
         "VALUES(?,?,?,?,?,?,?)",
@@ -551,6 +553,11 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_audit_entity   ON audit_log(entity, entity_id);
     """)
 
+    # إصدارات سابقة كانت تسجل كل حفظ تلقائي لمسودات البيع والمسح، ما كان
+    # يملأ سجل النشاط بآلاف الأسطر غير الرقابية. نحذف الضوضاء القديمة مرة
+    # عند التشغيل ونترك صفحات SQLite الحرة لإعادة استخدامها مستقبلاً.
+    con.execute("DELETE FROM audit_log WHERE action IN ('SAVE_POS_DRAFT','SAVE_SCAN_DRAFT') OR entity IN ('pos_draft','scan_draft')")
+
     # ── migrations ──
     from camera_api import init_schema
     init_schema(con)
@@ -565,6 +572,7 @@ def init_db():
     _add_col("purchases", "supplier_invoice_num", "TEXT")
     _add_col("purchases", "invoice_date", "TEXT")
     _add_col("purchases", "source", "TEXT DEFAULT 'manual'")
+    _add_col("sales", "payment_proof_image", "TEXT")
     _add_col("cash_sessions", "card_total",     "REAL DEFAULT 0")
     _add_col("cash_sessions", "transfer_total", "REAL DEFAULT 0")
     _add_col("cash_sessions", "credit_total",   "REAL DEFAULT 0")
@@ -1640,11 +1648,61 @@ class ShopAPI:
 
     # ══════════════ فحص سلامة البيانات — HEALTH CHECK ══════════════
     def get_health_check(self):
-        """فحص تشخيصي (قراءة فقط) لاكتشاف تضاربات شائعة في البيانات قبل
-        ما تسبب مشاكل عملية وقت البيع أو التوصيل."""
+        """فحص حقيقي للقاعدة والملفات والنسخ، مع عدم الادعاء بفحص أجهزة
+        خارجية لا يستطيع الخادم الوصول إليها."""
         con = _conn()
         today = date.today().isoformat()
         checks = []
+        diagnostics = []
+
+        def diagnostic(key, title, status, details, checked=True):
+            diagnostics.append({"key": key, "title": title, "status": status,
+                                "details": details, "checked": checked})
+
+        # SQLite نفسها: فحص الصفحات والعلاقات المرجعية، لا مجرد عدّ سجلات.
+        quick = con.execute("PRAGMA quick_check").fetchone()[0]
+        diagnostic("sqlite", "سلامة ملف قاعدة البيانات",
+                   "ok" if quick == "ok" else "error",
+                   "PRAGMA quick_check: ok" if quick == "ok" else str(quick))
+        foreign_errors = con.execute("PRAGMA foreign_key_check").fetchall()
+        diagnostic("foreign_keys", "العلاقات بين الجداول",
+                   "ok" if not foreign_errors else "error",
+                   "لا توجد مراجع مكسورة" if not foreign_errors else f"يوجد {len(foreign_errors)} مرجع مكسور")
+
+        db_exists = os.path.isfile(DB_PATH)
+        db_size = os.path.getsize(DB_PATH) if db_exists else 0
+        diagnostic("database_file", "ملف البيانات والتخزين المحلي",
+                   "ok" if db_exists and os.access(DB_PATH, os.R_OK | os.W_OK) else "error",
+                   f"{round(db_size/1024/1024, 2)} MB — قابل للقراءة والكتابة" if db_exists else "ملف قاعدة البيانات غير موجود")
+
+        # النسخ الاحتياطية تُفحص فعلياً بفتح أحدث ملف وتشغيل quick_check عليه.
+        try:
+            from backup_store import managed_backups, status as backup_status
+            backup_paths = managed_backups()
+            if backup_paths:
+                latest_backup = backup_paths[0]
+                with sqlite3.connect(f"file:{latest_backup}?mode=ro", uri=True) as backup_con:
+                    backup_quick = backup_con.execute("PRAGMA quick_check").fetchone()[0]
+                age_hours = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(latest_backup))).total_seconds()/3600
+                diagnostic("local_backup", "آخر نسخة احتياطية محلية",
+                           "ok" if backup_quick == "ok" and age_hours < 72 else "warning",
+                           f"{os.path.basename(latest_backup)} — منذ {age_hours:.1f} ساعة — الفحص: {backup_quick}")
+            else:
+                diagnostic("local_backup", "النسخة الاحتياطية المحلية", "warning", "لا توجد نسخة احتياطية")
+            secondary = backup_status()
+            if not secondary.get("configured"):
+                diagnostic("secondary_backup", "نسخة خارج الجهاز", "not_configured",
+                           "غير مُهيأة؛ لم يتم اختبار قرص خارجي أو مسار شبكة", False)
+            else:
+                diagnostic("secondary_backup", "نسخة خارج الجهاز",
+                           "ok" if secondary.get("state") == "ok" else "warning",
+                           secondary.get("error") or ("آخر نسخ ناجح: " + str(secondary.get("last_success") or "لا يوجد")))
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            diagnostic("backups", "فحص النسخ الاحتياطية", "error", str(exc))
+
+        # لا يمكن للخادم إثبات حالة أجهزة المتصفح من دون اختبار فعلي من المستخدم.
+        diagnostic("external_devices", "الطابعات والقارئ والكاميرا", "not_tested",
+                   "لا يوجد تكامل مباشر مع أجهزة خارجية؛ اختبر كل جهاز من مركز الطباعة والأجهزة", False)
 
         def add_check(key, title, severity, rows, detail_fn):
             checks.append({
@@ -1714,7 +1772,13 @@ class ShopAPI:
         overall = "critical" if any(c["severity"] == "critical" and c["count"] > 0 for c in checks) \
             else "warning" if any(c["severity"] == "warning" and c["count"] > 0 for c in checks) \
             else "ok"
-        return _ok({"overall": overall, "checked_at": datetime.now().isoformat(), "checks": checks})
+        if any(d["status"] == "error" for d in diagnostics): overall = "critical"
+        elif any(d["status"] == "warning" for d in diagnostics) and overall == "ok": overall = "warning"
+        elif any(not d["checked"] for d in diagnostics) and overall == "ok": overall = "incomplete"
+        return _ok({"overall": overall, "checked_at": datetime.now().isoformat(),
+                    "checks": checks, "diagnostics": diagnostics,
+                    "scope": "internal_data_and_backup",
+                    "external_verified": False})
 
     def create_performance_indexes(self):
         """استدع هذه مرة واحدة لإنشاء indexes لتسريع الاستعلامات
@@ -1784,12 +1848,19 @@ class ShopAPI:
         try:
             d = json.loads(data)
             name, phone = str(d.get("name") or "").strip(), str(d.get("phone") or "").strip()
-            if not name or not phone:
+            quick_pos = bool(d.get("quick_pos"))
+            if not name or (not phone and not quick_pos):
                 return _err("اسم العميل ورقم التليفون مطلوبان")
             customer_type = d.get("customer_type") or "فرد"
             if customer_type not in ("فرد", "جملة"):
                 return _err("نوع العميل غير صحيح")
             con = _conn()
+            if quick_pos:
+                existing = con.execute(
+                    "SELECT id FROM customers WHERE is_active=1 AND lower(trim(name))=lower(?) ORDER BY created_at LIMIT 1",
+                    (name,)).fetchone()
+                if existing:
+                    return _ok(existing["id"])
             nid = _new_id("C")
             con.execute(
                 "INSERT INTO customers(id,name,phone,address,notes,created_at,customer_type,company_name,tax_num,credit_limit,is_active)"
@@ -1918,9 +1989,13 @@ class ShopAPI:
         con   = _conn()
         try:
             sales = _rows(con.execute(
-                "SELECT * FROM sales ORDER BY sale_date DESC, sale_time DESC LIMIT ? OFFSET ?",
+                "SELECT id,invoice_num,invoice_seq,invoice_year,customer_id,customer_name,subtotal,discount,tax,total,"
+                "payment_method,cashier,sale_date,sale_time,status,voided_by,voided_at,customer_amount,loyalty_discount,source,"
+                "CASE WHEN payment_proof_image IS NOT NULL AND payment_proof_image<>'' THEN 1 ELSE 0 END AS has_payment_proof "
+                "FROM sales ORDER BY sale_date DESC, sale_time DESC LIMIT ? OFFSET ?",
                 (limit, offset)))
             for s in sales:
+                s["has_payment_proof"] = bool(s["has_payment_proof"])
                 s["items"] = _rows(con.execute(
                     "SELECT * FROM sale_items WHERE sale_id=?", (s["id"],)))
             total = con.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
@@ -1932,12 +2007,24 @@ class ShopAPI:
 
     def get_sale(self, sale_id: str):
         con = _conn()
-        row = con.execute("SELECT * FROM sales WHERE id=?", (sale_id,)).fetchone()
+        row = con.execute(
+            "SELECT id,invoice_num,invoice_seq,invoice_year,customer_id,customer_name,subtotal,discount,tax,total,"
+            "payment_method,cashier,sale_date,sale_time,status,voided_by,voided_at,customer_amount,loyalty_discount,source,"
+            "CASE WHEN payment_proof_image IS NOT NULL AND payment_proof_image<>'' THEN 1 ELSE 0 END AS has_payment_proof "
+            "FROM sales WHERE id=?", (sale_id,)).fetchone()
         if not row: con.close(); return _ok(None)
         s = dict(row)
+        s["has_payment_proof"] = bool(s["has_payment_proof"])
         s["items"] = _rows(con.execute(
             "SELECT * FROM sale_items WHERE sale_id=?", (sale_id,)))
         con.close(); return _ok(s)
+
+    def get_sale_payment_proof(self, sale_id: str):
+        con = _conn()
+        row = con.execute("SELECT payment_proof_image FROM sales WHERE id=?", (sale_id,)).fetchone()
+        con.close()
+        if not row: return _err("الفاتورة غير موجودة")
+        return _ok(row["payment_proof_image"])
 
     def search_sales(self, query: str, limit: int = 5):
         """بحث خفيف للبحث العام؛ تفاصيل البنود تُحمّل فقط عند فتح الفاتورة."""
@@ -2086,6 +2173,9 @@ class ShopAPI:
 
             total_due = round(subtotal_value - discount_value + tax_amount, 2)
             payment_method = str(d.get("payment_method", "نقدي") or "نقدي").strip()
+            payment_proof = d.get("payment_proof_image")
+            from camera_api import validate_image
+            validate_image(payment_proof)
             credit_paid = 0.0
             if payment_method == "آجل":
                 credit_name = str(d.get("credit_customer_name", "") or "").strip()
@@ -2156,13 +2246,13 @@ class ShopAPI:
             con.execute(
                 "INSERT INTO sales(id,invoice_num,invoice_seq,invoice_year,"
                 "customer_id,customer_name,subtotal,discount,tax,total,"
-                "payment_method,cashier,sale_date,sale_time,status,customer_amount,loyalty_discount,source)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pos')",
+                "payment_method,cashier,sale_date,sale_time,status,customer_amount,loyalty_discount,source,payment_proof_image)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pos',?)",
                 (nid, inv, seq, yr,
                  d.get("customer_id"), d.get("customer_name"),
                  subtotal_value, discount_value, tax_amount, total_due,
                  payment_method, d.get("cashier",""),
-                 s_date, s_time, "مكتمل", customer_amount, loyalty_discount)
+                 s_date, s_time, "مكتمل", customer_amount, loyalty_discount, payment_proof)
             )
             from shop_ops import add_months
             for item in items:

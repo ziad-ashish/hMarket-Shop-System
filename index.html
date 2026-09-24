@@ -300,8 +300,11 @@
         <div class="topbar-l">
           <div class="tb-search">
             <i class="fas fa-magnifying-glass"></i>
-            <input type="search" id="globalSearch" placeholder="بحث سريع: صنف، ماركة، IMEI..." autocomplete="off" />
+            <input type="search" id="globalSearch" placeholder="بحث سريع: صنف، ماركة، IMEI... (Ctrl+K)" autocomplete="off" aria-keyshortcuts="Control+K" />
           </div>
+          <button class="tb-icon-btn" id="shortcutsBtn" type="button" title="اختصارات لوحة المفاتيح (Ctrl+/)" aria-label="اختصارات لوحة المفاتيح" aria-keyshortcuts="Control+/">
+            <i class="fas fa-keyboard"></i>
+          </button>
           <button class="tb-icon-btn notif-btn" id="notifBtn">
             <i class="fas fa-bell"></i>
             <span class="notif-badge hidden" id="notifBadge">0</span>
