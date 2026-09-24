@@ -9,7 +9,7 @@ from contextlib import closing
 
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.graphics.barcode import code128
+from reportlab.graphics.barcode import code128, createBarcodeDrawing
 
 import api
 from delivery_pdf import _draw_arabic, _pil_to_reader, MM  # إعادة استخدام دوال الرسم المُختبرة
@@ -43,12 +43,27 @@ def _draw_one_label(c: canvas.Canvas, x: float, y: float, w: float, h: float, pr
 
     code = product.get("shop_barcode") or product.get("barcode") or product["id"]
     bar_h = h * 0.22
-    bc = code128.Code128(str(code), barHeight=bar_h, barWidth=0.28 * MM)
-    if bc.width > w - 2 * pad:
-        # تقليل عرض الشرطة إذا كان الكود طويلًا حتى يظل داخل حدود الملصق
-        bc = code128.Code128(str(code), barHeight=bar_h, barWidth=max(0.16, (w - 2 * pad) / bc.width * 0.28) * MM)
+    code = str(code).strip()
+    if _valid_ean13(code):
+        # EAN-13 هو الأنسب للأكواد الرقمية الداخلية وتدعمه كاميرات
+        # الموبايل وقارئات نقاط البيع بصورة أفضل من Code 128 الطويل.
+        bc = createBarcodeDrawing("EAN13", value=code[:12], humanReadable=False,
+                                  barHeight=bar_h, barWidth=0.30 * MM)
+    else:
+        bc = code128.Code128(code, barHeight=bar_h, barWidth=0.28 * MM)
+        if bc.width > w - 2 * pad:
+            # تقليل عرض الشرطة إذا كان الكود طويلًا حتى يظل داخل حدود الملصق
+            bc = code128.Code128(code, barHeight=bar_h, barWidth=max(0.16, (w - 2 * pad) / bc.width * 0.28) * MM)
     bc_x = x + (w - bc.width) / 2
     bc.drawOn(c, bc_x, y + pad)
+
+
+def _valid_ean13(code: str) -> bool:
+    if len(code) != 13 or not code.isdigit():
+        return False
+    weighted = sum(int(digit) * (1 if index % 2 == 0 else 3)
+                   for index, digit in enumerate(code[:12]))
+    return int(code[-1]) == (10 - weighted % 10) % 10
 
 
 def generate_labels_pdf(product_ids: list, copies_per_item: int, output_path: str):

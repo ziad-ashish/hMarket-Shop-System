@@ -32,6 +32,7 @@ from datetime import datetime, date, timedelta
 
 DB_PATH     = os.path.join(os.path.dirname(__file__), "shop.db")
 BACKUP_DIR  = os.path.join(os.path.dirname(__file__), "backups")
+EXPORT_DIR  = os.path.join(os.path.dirname(__file__), "exports")
 
 # ── in-memory login-failure tracker {username: (count, lockout_until)} ──
 _LOGIN_FAILURES: dict = {}
@@ -939,8 +940,8 @@ class ShopAPI:
             params = []
             if q:
                 like = f"%{str(q).strip()}%"
-                where.append("(name LIKE ? OR barcode LIKE ? OR category LIKE ?)")
-                params += [like, like, like]
+                where.append("(name LIKE ? OR brand LIKE ? OR model LIKE ? OR category LIKE ? OR barcode LIKE ? OR company_barcode LIKE ? OR shop_barcode LIKE ?)")
+                params += [like, like, like, like, like, like, like]
             where_clause = " AND ".join(where)
             rows = _rows(con.execute(
                 f"SELECT {light_columns(con)} FROM products WHERE {where_clause} "
@@ -967,6 +968,34 @@ class ShopAPI:
         con = _conn()
         try: return _ok(resolve(con, barcode))
         finally: con.close()
+
+    def export_products_csv(self):
+        """يحفظ كشف الأصناف فعليًا على القرص بدل الاعتماد على تنزيل WebView."""
+        con = None
+        try:
+            con = _conn()
+            rows = _rows(con.execute(
+                "SELECT barcode,shop_barcode,company_barcode,name,brand,model,category,cost,price,stock,"
+                "warranty_months,location,is_service FROM products WHERE is_active=1 ORDER BY name"
+            ))
+            os.makedirs(EXPORT_DIR, exist_ok=True)
+            filename = f"products_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+            path = os.path.abspath(os.path.join(EXPORT_DIR, filename))
+            with open(path, "w", encoding="utf-8-sig", newline="") as output:
+                writer = csv.writer(output)
+                writer.writerow(["الباركود", "الصنف", "الماركة", "الموديل", "التصنيف", "سعر الشراء", "سعر البيع", "المخزون", "الضمان (شهر)", "الموقع"])
+                for row in rows:
+                    writer.writerow([
+                        row.get("barcode") or row.get("shop_barcode") or row.get("company_barcode") or "",
+                        row.get("name") or "", row.get("brand") or "", row.get("model") or "", row.get("category") or "",
+                        row.get("cost") or 0, row.get("price") or 0, "" if row.get("is_service") else row.get("stock", 0),
+                        row.get("warranty_months") or 0, row.get("location") or "",
+                    ])
+            return _ok({"filename": filename, "path": path, "rows": len(rows)})
+        except Exception as exc:
+            return _err(f"تعذر حفظ ملف التصدير: {exc}")
+        finally:
+            if con is not None: con.close()
 
     def add_product(self, data: str, user_id: str = None):
         con = None
@@ -1909,6 +1938,84 @@ class ShopAPI:
         s["items"] = _rows(con.execute(
             "SELECT * FROM sale_items WHERE sale_id=?", (sale_id,)))
         con.close(); return _ok(s)
+
+    def search_sales(self, query: str, limit: int = 5):
+        """بحث خفيف للبحث العام؛ تفاصيل البنود تُحمّل فقط عند فتح الفاتورة."""
+        term = str(query or "").strip()
+        if not term:
+            return _ok([])
+        con = _conn()
+        try:
+            like = f"%{term}%"
+            rows = _rows(con.execute(
+                "SELECT id,invoice_num,customer_name,total,payment_method,sale_date,sale_time,status "
+                "FROM sales WHERE invoice_num LIKE ? OR customer_name LIKE ? "
+                "ORDER BY sale_date DESC,sale_time DESC LIMIT ?",
+                (like, like, max(1, min(int(limit), 20)))))
+            return _ok(rows)
+        finally:
+            con.close()
+
+    def global_search(self, query: str, per_type: int = 5):
+        """بحث موحّد خفيف عبر الكيانات التشغيلية الرئيسية في النظام."""
+        term = str(query or "").strip()
+        if not term:
+            return _ok([])
+        like = f"%{term}%"
+        limit = max(1, min(int(per_type or 5), 10))
+        con = _conn()
+        results = []
+
+        def add(kind, page, sql, params, title, subtitle, query_field=None):
+            for row in _rows(con.execute(sql, (*params, limit))):
+                results.append({
+                    "type": kind, "page": page, "id": row.get("id"),
+                    "title": str(row.get(title) or ""),
+                    "subtitle": str(row.get(subtitle) or ""),
+                    "query": str(row.get(query_field) or term) if query_field else term,
+                })
+
+        try:
+            add("product", "products",
+                "SELECT p.id,p.name,COALESCE(NULLIF(p.brand,''),p.category,'صنف') subtitle FROM products p "
+                "WHERE p.is_active=1 AND (p.name LIKE ? OR p.brand LIKE ? OR p.model LIKE ? OR p.category LIKE ? OR "
+                "p.barcode LIKE ? OR p.company_barcode LIKE ? OR p.shop_barcode LIKE ? OR EXISTS "
+                "(SELECT 1 FROM serial_units u WHERE u.product_id=p.id AND (u.serial LIKE ? OR u.serial2 LIKE ?))) "
+                "ORDER BY p.name LIMIT ?", (like,)*9, "name", "subtitle")
+            add("sale", "invoices",
+                "SELECT id,invoice_num,customer_name||' — '||printf('%.2f',total) subtitle FROM sales "
+                "WHERE invoice_num LIKE ? OR customer_name LIKE ? ORDER BY sale_date DESC,sale_time DESC LIMIT ?",
+                (like,like), "invoice_num", "subtitle")
+            add("customer", "customers",
+                "SELECT id,name,COALESCE(NULLIF(phone,''),NULLIF(company_name,''),'عميل') subtitle FROM customers "
+                "WHERE is_active=1 AND (name LIKE ? OR phone LIKE ? OR company_name LIKE ? OR tax_num LIKE ?) ORDER BY name LIMIT ?",
+                (like,)*4, "name", "subtitle")
+            add("supplier", "suppliers",
+                "SELECT id,name,COALESCE(NULLIF(phone,''),NULLIF(contact,''),'مورد') subtitle FROM suppliers "
+                "WHERE is_active=1 AND (name LIKE ? OR contact LIKE ? OR phone LIKE ? OR email LIKE ? OR tax_num LIKE ?) ORDER BY name LIMIT ?",
+                (like,)*5, "name", "subtitle", "name")
+            add("repair", "repairs",
+                "SELECT id,ticket_num,customer_name||' — '||COALESCE(device_brand||' '||device_model,device_type,'صيانة') subtitle FROM repair_tickets "
+                "WHERE ticket_num LIKE ? OR customer_name LIKE ? OR phone LIKE ? OR imei LIKE ? OR device_brand LIKE ? OR device_model LIKE ? ORDER BY received_at DESC LIMIT ?",
+                (like,)*6, "ticket_num", "subtitle")
+            add("purchase", "purchases",
+                "SELECT id,po_num,COALESCE(NULLIF(supplier_name,''),'أمر شراء')||' — '||status subtitle FROM purchases "
+                "WHERE po_num LIKE ? OR supplier_name LIKE ? OR supplier_invoice_num LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (like,)*3, "po_num", "subtitle", "po_num")
+            add("employee", "hr",
+                "SELECT id,full_name,COALESCE(NULLIF(role,''),NULLIF(phone,''),'موظف') subtitle FROM employees "
+                "WHERE is_active=1 AND (full_name LIKE ? OR role LIKE ? OR phone LIKE ? OR national_id LIKE ?) ORDER BY full_name LIMIT ?",
+                (like,)*4, "full_name", "subtitle")
+            add("delivery", "delivery",
+                "SELECT id,barcode,customer_name||' — '||status subtitle FROM delivery_stops "
+                "WHERE barcode LIKE ? OR customer_name LIKE ? OR phone LIKE ? OR address LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (like,)*4, "barcode", "subtitle", "barcode")
+            add("trip", "delivery",
+                "SELECT id,trip_num,status subtitle FROM delivery_trips WHERE trip_num LIKE ? OR notes LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (like,like), "trip_num", "subtitle", "trip_num")
+            return _ok(results[:40])
+        finally:
+            con.close()
 
     def add_sale(self, data: str, user_id: str = None):
         # FIX [1.2]: stock pre-check + atomic rollback

@@ -56,7 +56,11 @@ def register_routes(app):
     # ── PRODUCTS ─────────────────────────────────────────────
     @app.route("/api/get_products")
     def get_products():
-        return _resp(_api.get_products())
+        return _resp(_api.get_products(
+            limit=max(1, min(request.args.get("limit", 100, type=int), 500)),
+            offset=max(0, request.args.get("offset", 0, type=int)),
+            q=request.args.get("q", "").strip() or None,
+        ))
 
     @app.route("/api/get_product/<mid>")
     def get_product(mid):
@@ -65,6 +69,10 @@ def register_routes(app):
     @app.route("/api/get_product_by_barcode/<path:barcode>")
     def get_product_by_barcode(barcode):
         return _resp(_api.get_product_by_barcode(barcode))
+
+    @app.route("/api/export_products_csv", methods=["POST"])
+    def export_products_csv():
+        return _resp(_api.export_products_csv())
 
     @app.route("/api/add_product", methods=["POST"])
     def add_product():
@@ -124,7 +132,11 @@ def register_routes(app):
     # ── CUSTOMERS ──────────────────────────────────────────────
     @app.route("/api/get_customers")
     def get_customers():
-        return _resp(_api.get_customers())
+        return _resp(_api.get_customers(
+            limit=max(1, min(request.args.get("limit", 100, type=int), 500)),
+            offset=max(0, request.args.get("offset", 0, type=int)),
+            q=request.args.get("q", "").strip() or None,
+        ))
 
     @app.route("/api/get_customer/<pid>")
     def get_customer(pid):
@@ -178,11 +190,22 @@ def register_routes(app):
     # ── SALES ─────────────────────────────────────────────────
     @app.route("/api/get_sales")
     def get_sales():
-        return _resp(_api.get_sales())
+        return _resp(_api.get_sales(
+            limit=max(1, min(request.args.get("limit", 100, type=int), 500)),
+            offset=max(0, request.args.get("offset", 0, type=int)),
+        ))
 
     @app.route("/api/get_sale/<sale_id>")
     def get_sale(sale_id):
         return _resp(_api.get_sale(sale_id))
+
+    @app.route("/api/search_sales")
+    def search_sales():
+        return _resp(_api.search_sales(request.args.get("q", ""), request.args.get("limit", 5, type=int)))
+
+    @app.route("/api/global_search")
+    def global_search():
+        return _resp(_api.global_search(request.args.get("q", ""), request.args.get("per_type", 5, type=int)))
 
     @app.route("/api/add_sale", methods=["POST"])
     def add_sale():

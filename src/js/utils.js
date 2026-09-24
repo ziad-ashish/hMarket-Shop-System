@@ -359,12 +359,45 @@ const BarcodeGenerator = (() => {
   const START_B = 104;
   const STOP = 106;
 
+  const EAN_L = ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
+  const EAN_G = ['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
+  const EAN_R = ['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'];
+  const EAN_PARITY = ['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL'];
+
+  function validEAN13(str) {
+    if (!/^\d{13}$/.test(str)) return false;
+    const sum = [...str.slice(0, 12)].reduce((total, digit, index) => total + Number(digit) * (index % 2 === 0 ? 1 : 3), 0);
+    return Number(str[12]) === (10 - (sum % 10)) % 10;
+  }
+
+  function ean13Bits(str) {
+    const parity = EAN_PARITY[Number(str[0])];
+    let bits = '101';
+    for (let index = 1; index <= 6; index++) bits += (parity[index - 1] === 'L' ? EAN_L : EAN_G)[Number(str[index])];
+    bits += '01010';
+    for (let index = 7; index <= 12; index++) bits += EAN_R[Number(str[index])];
+    return bits + '101';
+  }
+
   function generateSVG(text, options = {}) {
     const str = String(text || '').trim();
     if (!str) return '';
     const height = options.height || 40;
     const includeText = options.includeText !== false;
     const barColor = options.color || '#000000';
+
+    // Internal shop codes are valid EAN-13 numbers. Rendering them as EAN-13
+    // makes them much easier for phones and retail scanners to recognise.
+    if (validEAN13(str)) {
+      const bits = ean13Bits(str), quietZone = 11, fullWidth = bits.length + quietZone * 2;
+      let rects = '';
+      for (let index = 0; index < bits.length; index++) {
+        if (bits[index] === '1') rects += `<rect x="${quietZone + index}" y="0" width="1" height="${height}" fill="${barColor}" />`;
+      }
+      const textH = includeText ? 14 : 0, totalSvgH = height + textH;
+      const textSvg = includeText ? `<text x="${fullWidth / 2}" y="${height + 11}" text-anchor="middle" font-family="monospace, sans-serif" font-size="11" font-weight="600" fill="${barColor}">${str}</text>` : '';
+      return `<svg xmlns="http://www.w3.org/2000/svg" data-barcode-format="ean_13" viewBox="0 0 ${fullWidth} ${totalSvgH}" width="${fullWidth * 2}" height="${totalSvgH}" shape-rendering="crispEdges" style="max-width:100%;height:auto;display:block;background:#fff">${rects}${textSvg}</svg>`;
+    }
 
     // Encode chars in Code 128 Set B (ASCII 32..126)
     const codes = [START_B];
@@ -408,7 +441,7 @@ const BarcodeGenerator = (() => {
       ? `<text x="${fullWidth / 2}" y="${height + 11}" text-anchor="middle" font-family="'Cairo', monospace, sans-serif" font-size="11" font-weight="600" fill="${barColor}">${_esc(str)}</text>`
       : '';
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fullWidth} ${totalSvgH}" style="max-width:100%;height:auto;display:block;">${rects}${textSvg}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" data-barcode-format="code_128" viewBox="0 0 ${fullWidth} ${totalSvgH}" width="${fullWidth * 2}" height="${totalSvgH}" shape-rendering="crispEdges" style="max-width:100%;height:auto;display:block;background:#fff">${rects}${textSvg}</svg>`;
   }
 
   return { generateSVG };
@@ -434,7 +467,16 @@ const DeviceSettings = (() => {
 // Robust printing helper supporting PyWebView, Electron, and standard web browsers via isolated iframe
 function printElement(id, customTitle = '') {
   const el = typeof id === 'string' ? document.getElementById(id) : id;
-  if (!el) return;
+  if (!el) { Toast.err('تعذر الطباعة', 'لم يتم العثور على المحتوى المطلوب طباعته'); return; }
+
+  // Temporary print containers are deliberately hidden in the application.
+  // Never copy that hidden state into the isolated print document.
+  const printable = el.cloneNode(true);
+  printable.removeAttribute('hidden');
+  printable.style.removeProperty('display');
+  printable.style.removeProperty('visibility');
+  printable.style.removeProperty('opacity');
+  printable.querySelectorAll('[hidden]').forEach(node => node.removeAttribute('hidden'));
 
   // Remove existing print iframe if any
   let frame = document.getElementById('ph_print_frame');
@@ -443,17 +485,18 @@ function printElement(id, customTitle = '') {
   frame = document.createElement('iframe');
   frame.id = 'ph_print_frame';
   frame.style.position = 'fixed';
-  frame.style.right = '-9999px';
-  frame.style.bottom = '-9999px';
-  frame.style.width = '0';
-  frame.style.height = '0';
+  frame.style.left = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '1px';
+  frame.style.height = '1px';
   frame.style.border = '0';
-  frame.style.visibility = 'hidden';
+  frame.style.opacity = '0';
+  frame.style.pointerEvents = 'none';
   document.body.appendChild(frame);
 
   const doc = frame.contentWindow.document;
-  const isReceipt = el.classList.contains('receipt') || !!el.querySelector('.receipt');
-  const isBarcodeSheet = el.classList.contains('barcode-sheet') || !!el.querySelector('.barcode-sheet');
+  const isReceipt = printable.classList.contains('receipt') || !!printable.querySelector('.receipt');
+  const isBarcodeSheet = printable.classList.contains('barcode-sheet') || !!printable.querySelector('.barcode-sheet');
   const paperW = DeviceSettings.get().paperWidth || '80';
   const maxW = paperW === '58' ? '58mm' : '80mm';
 
@@ -509,18 +552,22 @@ function printElement(id, customTitle = '') {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; }
       ${extraCSS}
     </style>
-  </head><body>${el.outerHTML}</body></html>`);
+  </head><body>${printable.outerHTML}</body></html>`);
   doc.close();
 
-  setTimeout(() => {
+  const runPrint = async () => {
     try {
+      if (doc.fonts?.ready) await Promise.race([doc.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       frame.contentWindow.focus();
       frame.contentWindow.print();
     } catch (err) {
       console.warn('Iframe print error, falling back to window.print', err);
-      window.print();
+      Toast.err('تعذر الطباعة', 'تعذر تجهيز صفحة الطباعة. حاول مرة أخرى.');
     }
-  }, 350);
+  };
+  frame.contentWindow.addEventListener('afterprint', () => setTimeout(() => frame.remove(), 100));
+  setTimeout(runPrint, 250);
 }
 
 /* ── BARCODE STICKERS PRINT HELPER ───────────────────────── */

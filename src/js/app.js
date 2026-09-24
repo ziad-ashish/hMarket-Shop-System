@@ -652,48 +652,34 @@ const App = (() => {
     input.addEventListener('input', debounce(async e => {
       const raw = e.target.value.trim();
       if (!raw) { drop.classList.add('hidden'); return; }
-      // FEAT [1]: Arabic-aware global search
-      const q = normalizeArabicText(raw);
       try {
-        const [products, pats] = await Promise.all([DB.getProducts(), DB.getCustomers()]);
-        const fm = products.filter(m =>
-          normalizeArabicText(m.name).includes(q) ||
-          normalizeArabicText(m.category).includes(q) ||
-          (m.barcode && m.barcode.includes(raw))
-        ).slice(0,5);
-        const fp = pats.filter(p =>
-          normalizeArabicText(p.name).includes(q) ||
-          p.phone.includes(raw)
-        ).slice(0,3);
-        if (!fm.length && !fp.length) { drop.classList.add('hidden'); return; }
-        drop.innerHTML = [
-          ...fm.map(m=>`<div class="sd-item" data-type="product" data-id="${_esc(m.id)}">
-            <div class="sd-icon"><i class="fas fa-pills"></i></div>
-            <div>
-              <div class="sd-name">${_esc(m.name)}</div>
-              <div class="sd-sub">${_esc(m.category)} — ${Fmt.money(m.price)} — مخزون: ${Fmt.num(m.stock)}</div>
-            </div>
-          </div>`),
-          ...fp.map(p=>`<div class="sd-item" data-type="pat" data-id="${_esc(p.id)}">
-            <div class="sd-icon"><i class="fas fa-user-injured"></i></div>
-            <div>
-              <div class="sd-name">${_esc(p.name)}</div>
-              <div class="sd-sub">${_esc(p.phone)} — ${_esc(p.bloodType)}</div>
-            </div>
-          </div>`),
-        ].join('');
+        const results = await DB.globalSearch(raw, 5);
+        if (!results.length) { drop.classList.add('hidden'); return; }
+        const icons = {product:'fa-box',sale:'fa-file-invoice-dollar',customer:'fa-user',supplier:'fa-truck-field',repair:'fa-screwdriver-wrench',purchase:'fa-cart-flatbed',employee:'fa-id-badge',delivery:'fa-location-dot',trip:'fa-truck'};
+        drop.innerHTML = results.map(result=>`<div class="sd-item" data-type="${_esc(result.type)}" data-page="${_esc(result.page)}" data-id="${_esc(result.id)}" data-query="${_esc(result.query)}">
+          <div class="sd-icon"><i class="fas ${icons[result.type] || 'fa-magnifying-glass'}"></i></div>
+          <div><div class="sd-name">${_esc(result.title)}</div><div class="sd-sub">${_esc(result.subtitle)}</div></div>
+        </div>`).join('');
         // FEAT [1]: clicking a result opens the detail modal directly
         drop.querySelectorAll('.sd-item').forEach(item => {
           item.addEventListener('click', async () => {
             input.value = ''; drop.classList.add('hidden');
-            const { type, id } = item.dataset;
+            const { type, id, page, query } = item.dataset;
             if (type === 'product') {
-              navigate('products');
-              // wait for page render then open product view
-              setTimeout(() => ProductsPage.openEditModal(id), 400);
-            } else if (type === 'pat') {
+              await ProductsPage.openDetailsModal(id);
+            } else if (type === 'customer') {
               navigate('customers');
               setTimeout(() => CustomersPage.viewPt(id), 400);
+            } else if (type === 'sale') {
+              navigate('invoices');
+              setTimeout(() => InvoicesPage.openInvoice(id), 350);
+            } else {
+              navigate(page);
+              const searchInputs = {suppliers:'supSearch',repairs:'repSearch',purchases:'poSearch',warranty:'wrSearch'};
+              setTimeout(() => {
+                const field = document.getElementById(searchInputs[page]);
+                if (field) { field.value = query || raw; field.dispatchEvent(new Event('input', {bubbles:true})); }
+              }, 450);
             }
           });
         });

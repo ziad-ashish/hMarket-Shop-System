@@ -156,6 +156,7 @@ const DB = {
     return result.products ? result.products.map(m=>this._normProduct(m)) : (result.map ? result.map(m=>this._normProduct(m)) : []);
   },
   async getProduct(id)     { return _IS_FLASK ? this._normProduct(await _api(`get_product/${id}`)) : _LS.getProduct(id); },
+  async exportProductsCSV() { return _IS_FLASK ? _api('export_products_csv', {body:{}}) : Promise.reject(new Error('التصدير متاح عند تشغيل البرنامج فقط')); },
   async getProductByBarcode(barcode) {
     if (_IS_FLASK) {
       const raw = await _api(`get_product_by_barcode/${encodeURIComponent(barcode)}`);
@@ -258,6 +259,11 @@ const DB = {
     return result.sales ? result.sales.map(s=>this._normSale(s)) : (result.map ? result.map(s=>this._normSale(s)) : []);
   },
   async getSale(id)         { return _IS_FLASK ? this._normSale(await _api(`get_sale/${id}`)) : _LS.getSale(id); },
+  async searchSales(q, limit=5) {
+    if (_IS_FLASK) return (await _api('search_sales', {params:{q, limit}})).map(s=>this._normSale(s));
+    return (await _LS.getSales()).filter(s=>s.invoiceNum.includes(q) || s.customerName.includes(q)).slice(0,limit);
+  },
+  async globalSearch(q, perType=5) { return _IS_FLASK ? _api('global_search', {params:{q, per_type:perType}}) : []; },
   async addSale(data)       {
     if (_IS_FLASK) return _api('add_sale', {body: this._withUser({...data,
       customer_id:data.customerId??data.customer_id??null, customer_name:data.customerName??data.customer_name??'',

@@ -311,6 +311,19 @@ const SalesPage = (() => {
         if(_cart.length)Toast.info('تم استرجاع المسودة','راجع الكميات والأسعار الحالية قبل إصدار الفاتورة');
       }
       updateCartUI();renderGrid();_restoring=false;
+      const pendingProductId = sessionStorage.getItem('pos_pending_product');
+      if (pendingProductId) {
+        sessionStorage.removeItem('pos_pending_product');
+        try {
+          const pendingProduct = await DB.getProduct(pendingProductId);
+          if (pendingProduct) {
+            const index = _allProducts.findIndex(product => product.id === pendingProduct.id);
+            if (index < 0) _allProducts.push(pendingProduct); else _allProducts[index] = pendingProduct;
+            addToCart(pendingProduct.id);
+            renderGrid();
+          }
+        } catch (error) { Toast.err('تعذر إضافة الصنف', error.message); }
+      }
     }catch(error){document.getElementById('posDraftStatus').textContent='تعذر استرجاع المسودة: '+error.message;Toast.err('تعذر فتح المسودة',error.message);}
   }
 

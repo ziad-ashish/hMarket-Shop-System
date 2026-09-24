@@ -38,6 +38,20 @@ const CameraStudio = (() => {
       } catch (_) { /* Use the bundled decoder. */ }
     }
     let reader = null;
+    function highContrast(source) {
+      const canvas = document.createElement('canvas');
+      canvas.width = source.width; canvas.height = source.height;
+      const context = canvas.getContext('2d', {willReadFrequently:true});
+      context.drawImage(source, 0, 0);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let index = 0; index < image.data.length; index += 4) {
+        const gray = image.data[index] * .299 + image.data[index + 1] * .587 + image.data[index + 2] * .114;
+        const value = Math.max(0, Math.min(255, (gray - 128) * 1.8 + 128));
+        image.data[index] = image.data[index + 1] = image.data[index + 2] = value;
+      }
+      context.putImageData(image, 0, 0);
+      return canvas;
+    }
     async function fallback(canvas) {
       if (!library) library = new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -48,14 +62,22 @@ const CameraStudio = (() => {
       });
       await library;
       reader ||= new ZXingBrowser.BrowserMultiFormatReader();
-      try { const result = reader.decodeFromCanvas(canvas); return [result.getText()]; }
-      catch (e) { if (['NotFoundException','ChecksumException','FormatException'].includes(e.name) || e.constructor?.name?.includes('NotFound')) return []; return []; }
+      for (const candidate of [canvas, highContrast(canvas)]) {
+        try { const result = reader.decodeFromCanvas(candidate); return [result.getText()]; }
+        catch (e) {
+          if (!['NotFoundException','ChecksumException','FormatException'].includes(e.name) && !e.constructor?.name?.includes('NotFound')) console.warn('barcode decode error', e);
+        }
+      }
+      return [];
     }
     return async canvas => {
       if (native) {
         try { const hits = await native.detect(canvas); if (hits.length) return [...new Set(hits.map(r => r.rawValue))]; }
         catch (_) { native = null; }
       }
+      // Native BarcodeDetector can be available yet miss a valid barcode on
+      // some Windows/WebView camera frames. Always try bundled ZXing as the
+      // second decoder instead of treating a native miss as the final result.
       return fallback(canvas);
     };
   }
@@ -115,7 +137,7 @@ const CameraStudio = (() => {
     document.body.append(dialog); dialog.showModal();
     const $ = selector => dialog.querySelector(selector);
     const media = createSession(constraints => navigator.mediaDevices.getUserMedia(constraints));
-    let closed=false, epoch=0, timer=null, decode=null, pending=false, busy=false, source=null, shot='', rotation=0, crop=0, paused=false, last='', absentAt=0, result=null;
+    let closed=false, epoch=0, timer=null, decode=null, pending=false, busy=false, source=null, shot='', rotation=0, crop=0, paused=false, last='', absentAt=0, result=null, scanAttempt=0;
     const status = (text, state='idle') => { $('[data-status]').textContent=text; $('[data-status]').dataset.state=state; };
     const message = text => { $('[data-message]').textContent=text; };
     const alive = token => !closed && dialog.isConnected && (token === undefined || token===epoch);
@@ -191,7 +213,10 @@ const CameraStudio = (() => {
       if(!paused&&!busy&&$('video').readyState>=2){
         try{
           // Decode only the central guide to avoid selecting neighboring boxes.
-          const frame=toCanvas($('video'),$('[data-quality]').value==='eco'?640:1000,0,.12);
+          const video=$('video'), maxSize=$('[data-quality]').value==='eco'?900:1440;
+          // Alternate between the guide area and the complete camera frame.
+          // This prevents a close/large barcode from being clipped at its quiet zones.
+          const frame=toCanvas(video,maxSize,0,(scanAttempt++ % 3 === 0) ? 0 : .06);
           const codes=await decode(frame);if(!alive(token))return;
           if(!codes.length){if(!absentAt)absentAt=Date.now();if(Date.now()-absentAt>1000)last='';}
           else{absentAt=0;const unique=[...new Set(codes)].filter(Boolean);

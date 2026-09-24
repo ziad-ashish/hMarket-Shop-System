@@ -285,6 +285,14 @@ const InvoicesPage = (() => {
     });
   }
 
+  async function openInvoice(id) {
+    try {
+      const sale = await DB.getSale(id);
+      if (!sale) return Toast.err('غير موجودة', 'تعذر العثور على الفاتورة');
+      _viewSale(sale);
+    } catch (error) { Toast.err('تعذر فتح الفاتورة', error.message); }
+  }
+
   function _printSale(s) {
     const tmp = document.createElement('div');
     tmp.id = 'tempDirectInvoicePrint';
@@ -302,5 +310,5 @@ const InvoicesPage = (() => {
     );
   }
 
-  return { render, afterRender };
+  return { render, afterRender, openInvoice };
 })();

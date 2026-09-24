@@ -722,10 +722,26 @@ const ProductsPage = (() => {
     });
   }
 
-  function exportData() {
-    exportCSV('الأصناف',
-      ['الباركود', 'الصنف', 'الماركة', 'الموديل', 'التصنيف', 'سعر الشراء', 'سعر البيع', 'المخزون', 'الضمان (شهر)', 'الموقع'],
-      _allProducts.map(m => [m.barcode || m.shopBarcode, m.name, m.brand, m.model, m.category, m.cost, m.price, m.isService ? '' : m.stock, m.warrantyMonths, m.location]));
+  async function exportData() {
+    const button = document.getElementById('productExportBtn');
+    if (button) button.disabled = true;
+    try {
+      const result = await DB.exportProductsCSV();
+      Modal.open({
+        title: '<i class="fas fa-file-csv"></i> تم حفظ ملف التصدير',
+        body: `<div class="alert ok" style="margin-bottom:.8rem">تم تصدير ${Fmt.num(result.rows)} صنف بنجاح.</div>
+          <div class="form-group"><label class="form-label">مكان الملف على الجهاز</label>
+            <input class="form-control" id="exportedFilePath" dir="ltr" readonly value="${_esc(result.path)}"></div>
+          <p class="form-hint">افتح مجلد المشروع ثم مجلد <strong>exports</strong>. اسم الملف: <strong>${_esc(result.filename)}</strong></p>`,
+        foot: `<button class="btn btn-ghost" id="copyExportPath"><i class="fas fa-copy"></i> نسخ المسار</button>
+          <button class="btn btn-primary" onclick="Modal.close()">حسنًا</button>`,
+      });
+      document.getElementById('copyExportPath')?.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(result.path); Toast.ok('تم النسخ', 'تم نسخ مسار الملف'); }
+        catch (_) { document.getElementById('exportedFilePath')?.select(); }
+      });
+    } catch (error) { Toast.err('فشل التصدير', error.message); }
+    finally { if (button) button.disabled = false; }
   }
 
   function _prepareInvoiceImage(file) {
@@ -755,6 +771,38 @@ const ProductsPage = (() => {
         img.src = reader.result;
       };
       reader.readAsDataURL(file);
+    });
+  }
+
+  async function openDetailsModal(productOrId) {
+    const product = typeof productOrId === 'string' ? await DB.getProduct(productOrId) : productOrId;
+    if (!product) return Toast.err('غير موجود', 'تعذر العثور على بيانات الصنف');
+    const barcode = product.shopBarcode || product.companyBarcode || product.barcode || '—';
+    const stockState = product.isService ? '<span class="badge bdg-slate">خدمة</span>' : Fmt.stockBadge(product.stock, product.minStock);
+    Modal.open({
+      title: '<i class="fas fa-box-open"></i> تفاصيل الصنف', size: 'lg',
+      body: `<div class="product-details-view">
+        <div class="pdv-hero">
+          <div class="pdv-image">${product.imageUrl ? `<img src="${_esc(product.imageUrl)}" alt="${_esc(product.name)}">` : `<i class="fas ${product.trackSerial ? 'fa-mobile-screen' : product.isService ? 'fa-screwdriver-wrench' : 'fa-box'}"></i>`}</div>
+          <div><h2>${_esc(product.name)}</h2><p>${_esc([product.brand, product.model].filter(Boolean).join(' · ') || product.category || '')}</p>${stockState}</div>
+          <strong class="pdv-price">${Fmt.money(product.price)}</strong>
+        </div>
+        <div class="pdv-grid">
+          <div><span>التصنيف</span><strong>${_esc(product.category || '—')}</strong></div>
+          <div><span>الباركود</span><strong dir="ltr">${_esc(barcode)}</strong></div>
+          <div><span>المخزون</span><strong>${product.isService ? 'لا ينطبق' : `${Fmt.num(product.stock)} ${_esc(product.saleUnit || product.unit)}`}</strong></div>
+          <div><span>الضمان</span><strong>${product.warrantyMonths ? `${Fmt.num(product.warrantyMonths)} شهر` : 'بدون ضمان'}</strong></div>
+          <div><span>الموقع</span><strong>${_esc(product.location || '—')}</strong></div>
+          <div><span>الحد الأدنى</span><strong>${product.isService ? '—' : Fmt.num(product.minStock)}</strong></div>
+        </div>
+        ${product.description ? `<div class="pdv-note"><span>الوصف / الملاحظات</span><p>${_esc(product.description)}</p></div>` : ''}
+      </div>`,
+      foot: `<button type="button" class="btn btn-ghost" onclick="Modal.close()">إغلاق</button>
+        <button type="button" class="btn btn-primary" id="productToSaleBtn"><i class="fas fa-cash-register"></i> إضافة إلى فاتورة بيع</button>`,
+    });
+    document.getElementById('productToSaleBtn')?.addEventListener('click', () => {
+      sessionStorage.setItem('pos_pending_product', product.id);
+      Modal.close(); App.navigate('sales');
     });
   }
 
@@ -828,5 +876,5 @@ const ProductsPage = (() => {
     });
   }
 
-  return { render, afterRender, openAddModal, openEditModal, prepareInvoiceImage: _prepareInvoiceImage };
+  return { render, afterRender, openAddModal, openEditModal, openDetailsModal, prepareInvoiceImage: _prepareInvoiceImage };
 })();
